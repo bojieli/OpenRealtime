@@ -1,0 +1,127 @@
+{
+  "finished": "2026-09-25T02:39:30.908489+00:00",
+  "exit_code": 1,
+  "errors": [
+    "fdb-user_interruption.json: exit 0; 7 task errors",
+    "fdb-user_backchannel.json: exit 0; 41 task errors",
+    "fdb-background_speech.json: exit 0; 7 task errors",
+    "fdb-talking_to_other.json: exit 0; 12 task errors",
+    "fdbench.json: exit 0; 4 task errors"
+  ],
+  "commands": {
+    "fdb-user_interruption.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-b7b68848",
+        "bench",
+        "fdb",
+        "-categories",
+        "user_interruption",
+        "-limit",
+        "0",
+        "-wait-configured",
+        "-endpoint",
+        "ws://127.0.0.1:9313/v1/realtime",
+        "-cell",
+        "closed-gemini-live",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/closed-gemini-live/runs/20260924T142415Z-ehj7snog/fdb-user_interruption.json"
+      ],
+      "exit_code": 0,
+      "error": "7 task errors"
+    },
+    "fdb-user_backchannel.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-b7b68848",
+        "bench",
+        "fdb",
+        "-categories",
+        "user_backchannel",
+        "-limit",
+        "0",
+        "-wait-configured",
+        "-endpoint",
+        "ws://127.0.0.1:9313/v1/realtime",
+        "-cell",
+        "closed-gemini-live",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/closed-gemini-live/runs/20260924T142415Z-ehj7snog/fdb-user_backchannel.json"
+      ],
+      "exit_code": 0,
+      "error": "41 task errors"
+    },
+    "fdb-background_speech.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-b7b68848",
+        "bench",
+        "fdb",
+        "-categories",
+        "background_speech",
+        "-limit",
+        "0",
+        "-wait-configured",
+        "-endpoint",
+        "ws://127.0.0.1:9313/v1/realtime",
+        "-cell",
+        "closed-gemini-live",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/closed-gemini-live/runs/20260924T142415Z-ehj7snog/fdb-background_speech.json"
+      ],
+      "exit_code": 0,
+      "error": "7 task errors"
+    },
+    "fdb-talking_to_other.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-b7b68848",
+        "bench",
+        "fdb",
+        "-categories",
+        "talking_to_other",
+        "-limit",
+        "0",
+        "-wait-configured",
+        "-endpoint",
+        "ws://127.0.0.1:9313/v1/realtime",
+        "-cell",
+        "closed-gemini-live",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/closed-gemini-live/runs/20260924T142415Z-ehj7snog/fdb-talking_to_other.json"
+      ],
+      "exit_code": 0,
+      "error": "12 task errors"
+    },
+    "fdbench.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-b7b68848",
+        "bench",
+        "fdbench",
+        "-conditions",
+        "cosyvoice2-single-round-combine-med",
+        "-limit",
+        "0",
+        "-wait-configured",
+        "-endpoint",
+        "ws://127.0.0.1:9313/v1/realtime",
+        "-cell",
+        "closed-gemini-live",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/closed-gemini-live/runs/20260924T142415Z-ehj7snog/fdbench.json"
+      ],
+      "exit_code": 0,
+      "error": "4 task errors"
+    }
+  },
+  "load_average_end": [
+    "173.82",
+    "178.61",
+    "186.87"
+  ],
+  "sha256": {
+    "run.json": "e2b00c3cfb48790d655ffb935c15e1366654b83f10921da2a78245f24ca237fb",
+    "profile.yaml": "c02e34c06b1c7899879d04cd1d98560822cba639359fa7c164b5abe83de165a5",
+    "fdb-user_interruption.json": "984b903134224aa00380249318e57b79d33595f9b32f65768f69389bcdd1293c",
+    "fdb-user_backchannel.json": "09444ff626d17fd7182a2de796c819564cfb75df8f9005331c9b38c97c385a92",
+    "fdb-background_speech.json": "3795bc73f13ffc1abd6fcdbaa35ae480393efa478f6519e84144d172419faa26",
+    "fdb-talking_to_other.json": "f2d7743e364429aaa39ecb749f1694d00831962b701a07b2a8ccafc22cfd5b60",
+    "fdbench.json": "a6126ae6a3c777c17c17e229bebfb309c96b8b44f0c56f80feeaebd35a956621"
+  }
+}

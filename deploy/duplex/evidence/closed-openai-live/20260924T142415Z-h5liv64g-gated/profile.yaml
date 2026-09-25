@@ -1,0 +1,13 @@
+# Closed live reference (plan cell R0): OpenAI Live (v1/live/sessions), a
+# continuous full-duplex stream without response boundaries, translated into
+# the Realtime dialect; background reasoner local. Needs OPENAI_API_KEY.
+binding: upstream
+upstream-provider: openai-live
+upstream-token-env: OPENAI_API_KEY
+# The background reasoner is hosted too, so this cell needs no local GPU and
+# can run while the card is busy with the open models.
+slow-provider: openai
+# gpt-5-mini needs a verified organization for streaming on this account
+# (HTTP 404, 2026-09-24); gpt-5.4-mini streams and is its current equivalent.
+slow-model: gpt-5.4-mini
+slow-token-env: OPENAI_API_KEY

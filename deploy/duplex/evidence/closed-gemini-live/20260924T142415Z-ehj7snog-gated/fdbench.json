@@ -1,0 +1,5883 @@
+{
+  "suite": "fd-bench",
+  "cell": {
+    "name": "closed-gemini-live",
+    "levels": {
+      "F1": "cascade",
+      "F10": "slow-only",
+      "F11": "3fps",
+      "F12": "qwen3-asr",
+      "F2": "fast+slow",
+      "F3": "audio",
+      "F4": "200ms",
+      "F5": "engine",
+      "F6": "hosted-high",
+      "F7": "narration",
+      "F8": "none",
+      "F9": "local-text"
+    }
+  },
+  "provenance": {
+    "revision": "62114cbadff62f838f66b236460eb5ea3448eb63",
+    "modified": false,
+    "executable_sha256": "a5c9514ff29716b2246b15a75dd78967c925075559e408184652d5cae4c1e9d8",
+    "machine": {
+      "cpu": "13th Gen Intel(R) Core(TM) i9-13900KS",
+      "cores": 32,
+      "gpu": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+      "os": "linux",
+      "arch": "amd64",
+      "go_version": "go1.25.14",
+      "hostname": "ubuntu"
+    },
+    "started_at": "2026-09-24T20:46:49Z",
+    "finished_at": "2026-09-25T02:39:30Z"
+  },
+  "expected_tasks": 293,
+  "tasks": [
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_1",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 4,
+        "overlap_ms": 1520,
+        "overrun_turns": 0,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 1920.0208333333358,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_10",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 4,
+        "overlap_ms": 6840,
+        "overrun_turns": 1,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 1688.0208333333321,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_100",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 2,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1908.4750000000004,
+        "response_latency_p95_ms": 1981.8889000000004,
+        "turn_end_lead_ms": 940,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_101",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 4,
+        "overlap_ms": 1920,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 1136.041666666666,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_102",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 4200,
+        "overrun_turns": 3,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1701.0699999999997,
+        "response_latency_p95_ms": 1952.228949999997,
+        "turn_end_lead_ms": 1102.0416666666679,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_103",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1935.6945000000014,
+        "response_latency_p95_ms": 1941.2641500000016,
+        "turn_end_lead_ms": 1198.020833333334,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_104",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1793.8994999999995,
+        "response_latency_p95_ms": 1819.2916499999978,
+        "turn_end_lead_ms": 1910,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_105",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 7440,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1933.0290000000023,
+        "response_latency_p95_ms": 1933.0290000000023,
+        "turn_end_lead_ms": 2234.041666666668,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_106",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 600,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1912.3180000000002,
+        "response_latency_p95_ms": 1912.3180000000002,
+        "turn_end_lead_ms": 1138.041666666666,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_107",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 4,
+        "missed_turns": 1,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1880.7467499999993,
+        "response_latency_p95_ms": 1968.5684750000005,
+        "turn_end_lead_ms": 1462.0208333333358,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_108",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 5,
+        "overlap_ms": 6200,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 922.0208333333321,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_109",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 4,
+        "overlap_ms": 1720,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 736.0208333333339,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_11",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 1280,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1867.77275,
+        "response_latency_p95_ms": 1980.2495749999996,
+        "turn_end_lead_ms": 1434.0625000000018,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_110",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 1400,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1530.4919999999984,
+        "response_latency_p95_ms": 1530.4919999999984,
+        "turn_end_lead_ms": 890.0208333333358,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_111",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 9440,
+        "overrun_turns": 3,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1427.4717499999988,
+        "response_latency_p95_ms": 1458.7010749999986,
+        "turn_end_lead_ms": 1782.0416666666697,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_112",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 4480,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1892.2600000000002,
+        "response_latency_p95_ms": 1956.4903000000004,
+        "turn_end_lead_ms": 2074,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_113",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 2600,
+        "overrun_turns": 0,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1770.6679999999978,
+        "response_latency_p95_ms": 1770.6679999999978,
+        "turn_end_lead_ms": 1466,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_114",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 5,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 1338.0624999999982,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_115",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1772.3740000000034,
+        "response_latency_p95_ms": 1772.3740000000034,
+        "turn_end_lead_ms": 2002,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_116",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1873.5327499999985,
+        "response_latency_p95_ms": 1919.7511250000002,
+        "turn_end_lead_ms": 1598.0625000000018,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_117",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 5,
+        "overlap_ms": 7960,
+        "overrun_turns": 3,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 1610,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_118",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 4,
+        "overlap_ms": 1400,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 1420.0208333333358,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_119",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1738.5789999999997,
+        "response_latency_p95_ms": 1738.5789999999997,
+        "turn_end_lead_ms": 1476.0416666666679,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_12",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1938.4809999999998,
+        "response_latency_p95_ms": 1938.4809999999998,
+        "turn_end_lead_ms": 1300.0208333333321,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_120",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 5,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 978.0208333333321,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_121",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 2280,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1848.121000000001,
+        "response_latency_p95_ms": 1916.642500000001,
+        "turn_end_lead_ms": 2026,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_122",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 5,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 1754.0416666666697,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_123",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1774.8410000000003,
+        "response_latency_p95_ms": 1774.8410000000003,
+        "turn_end_lead_ms": 1660.0208333333358,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_124",
+      "completed": false,
+      "passed": false,
+      "error": "the session reported a failure: Gemini exhausted its output token limit before completing the response (thinking and spoken output share this limit)",
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_125",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1863.4544999999998,
+        "response_latency_p95_ms": 1863.4544999999998,
+        "turn_end_lead_ms": 1124.0416666666642,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_126",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 4,
+        "overlap_ms": 1480,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 1112.0208333333358,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_127",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 4,
+        "missed_turns": 1,
+        "overlap_ms": 1240,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1768.9677499999998,
+        "response_latency_p95_ms": 1942.9524999999974,
+        "turn_end_lead_ms": 2030.020833333334,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_128",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 2640,
+        "overrun_turns": 0,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1993.0929999999998,
+        "response_latency_p95_ms": 1993.0929999999998,
+        "turn_end_lead_ms": 1546.041666666666,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_129",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1760.9215000000004,
+        "response_latency_p95_ms": 1896.0263500000003,
+        "turn_end_lead_ms": 1626.0833333333376,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_13",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 2,
+        "overlap_ms": 1200,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1823.844,
+        "response_latency_p95_ms": 1823.844,
+        "turn_end_lead_ms": 898.0416666666642,
+        "turns": 3
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_130",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 3200,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1906.3594999999991,
+        "response_latency_p95_ms": 1945.03745,
+        "turn_end_lead_ms": 1422.041666666666,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_131",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 3160,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1650.2875000000013,
+        "response_latency_p95_ms": 1839.0530500000002,
+        "turn_end_lead_ms": 1410,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_132",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 7440,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1775.3649999999998,
+        "response_latency_p95_ms": 1788.7970499999992,
+        "turn_end_lead_ms": 2146.062500000002,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_133",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 8160,
+        "overrun_turns": 1,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1649.2669999999998,
+        "response_latency_p95_ms": 1649.2669999999998,
+        "turn_end_lead_ms": 1666.020833333334,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_134",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 5600,
+        "overrun_turns": 4,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1993.9735,
+        "response_latency_p95_ms": 1993.9735,
+        "turn_end_lead_ms": 1754.0208333333358,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_135",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 1400,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1652.8330000000005,
+        "response_latency_p95_ms": 1893.4425999999996,
+        "turn_end_lead_ms": 2030.0416666666679,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_136",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 2,
+        "overlap_ms": 2400,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1936.5959999999995,
+        "response_latency_p95_ms": 1961.5898999999984,
+        "turn_end_lead_ms": 944.0208333333358,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_137",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 840,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1801.8264999999992,
+        "response_latency_p95_ms": 1977.718449999999,
+        "turn_end_lead_ms": 2166.0416666666642,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_138",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 2240,
+        "overrun_turns": 0,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1060.6627499999995,
+        "response_latency_p95_ms": 1785.6638249999992,
+        "turn_end_lead_ms": 962.0208333333321,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_139",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 1,
+        "overlap_ms": 280,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1576.594000000001,
+        "response_latency_p95_ms": 1795.6612000000005,
+        "turn_end_lead_ms": 2140.020833333332,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_14",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1950.0655000000006,
+        "response_latency_p95_ms": 1969.4429500000012,
+        "turn_end_lead_ms": 1478.020833333334,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_140",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 3680,
+        "overrun_turns": 2,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1754.8899999999994,
+        "response_latency_p95_ms": 1872.6505000000004,
+        "turn_end_lead_ms": 2286.0208333333358,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_141",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 4520,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1775.5152499999986,
+        "response_latency_p95_ms": 1791.0116749999986,
+        "turn_end_lead_ms": 1650.0416666666642,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_142",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 5720,
+        "overrun_turns": 2,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1765.044750000001,
+        "response_latency_p95_ms": 1875.0141750000003,
+        "turn_end_lead_ms": 2262.020833333332,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_143",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1807.9795000000013,
+        "response_latency_p95_ms": 1876.6625500000016,
+        "turn_end_lead_ms": 1258,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_144",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 12960,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1688.2797499999979,
+        "response_latency_p95_ms": 1770.8666749999977,
+        "turn_end_lead_ms": 1342.0416666666679,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_145",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1757.6310000000012,
+        "response_latency_p95_ms": 1890.0399000000004,
+        "turn_end_lead_ms": 1578,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_146",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 880,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1900.4672499999997,
+        "response_latency_p95_ms": 1971.9886749999996,
+        "turn_end_lead_ms": 1078.0208333333321,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_147",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 2080,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1828.1710000000003,
+        "response_latency_p95_ms": 1931.2079499999977,
+        "turn_end_lead_ms": 1926.0625000000036,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_148",
+      "completed": false,
+      "passed": false,
+      "error": "the session reported a failure: Gemini exhausted its output token limit before completing the response (thinking and spoken output share this limit)",
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_149",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 1,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1785.3990000000013,
+        "response_latency_p95_ms": 1906.0422,
+        "turn_end_lead_ms": 1608.0208333333358,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_15",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1857.0787499999997,
+        "response_latency_p95_ms": 1920.5249250000006,
+        "turn_end_lead_ms": 1166.0625000000018,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_150",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1937.925000000003,
+        "response_latency_p95_ms": 1937.925000000003,
+        "turn_end_lead_ms": 1036.020833333334,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_151",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 7360,
+        "overrun_turns": 3,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1960.312,
+        "response_latency_p95_ms": 1963.6816000000003,
+        "turn_end_lead_ms": 1246.0208333333358,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_152",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 5,
+        "missed_turns": 0,
+        "overlap_ms": 2840,
+        "overrun_turns": 0,
+        "premature_turns": 2,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1895.8779999999997,
+        "response_latency_p95_ms": 1979.0932999999975,
+        "turn_end_lead_ms": 802.0625000000055,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_153",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 2920,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1905.0880000000002,
+        "response_latency_p95_ms": 1987.6189000000006,
+        "turn_end_lead_ms": 1898.020833333334,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_154",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 5880,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1865.2459999999992,
+        "response_latency_p95_ms": 1865.2459999999992,
+        "turn_end_lead_ms": 1242.0208333333321,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_155",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 4,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 1600.041666666666,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_156",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 480,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1760.4579999999987,
+        "response_latency_p95_ms": 1905.9303999999975,
+        "turn_end_lead_ms": 1710.0208333333321,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_157",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 4,
+        "overlap_ms": 1080,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 1424,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_158",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 3200,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1723.349000000002,
+        "response_latency_p95_ms": 1928.4923000000001,
+        "turn_end_lead_ms": 1910.0416666666679,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_159",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 2,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1908.7317500000008,
+        "response_latency_p95_ms": 1925.571425000001,
+        "turn_end_lead_ms": 1932.041666666666,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_16",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 2600,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1713.6410000000033,
+        "response_latency_p95_ms": 1713.6410000000033,
+        "turn_end_lead_ms": 1096.0208333333321,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_160",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 960,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1935.8202500000007,
+        "response_latency_p95_ms": 1944.0073250000012,
+        "turn_end_lead_ms": 1114.0208333333358,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_161",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 5,
+        "overlap_ms": 2200,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 2182.0208333333358,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_162",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1785.549500000001,
+        "response_latency_p95_ms": 1931.8296499999997,
+        "turn_end_lead_ms": 1546.0416666666679,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_163",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 8440,
+        "overrun_turns": 3,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1207.8070000000007,
+        "response_latency_p95_ms": 1207.8070000000007,
+        "turn_end_lead_ms": 1598.0416666666697,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_164",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 1880,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1190.1287499999999,
+        "response_latency_p95_ms": 1410.8940249999976,
+        "turn_end_lead_ms": 1086.0208333333358,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_165",
+      "completed": false,
+      "passed": false,
+      "error": "the session reported a failure: Gemini exhausted its output token limit before completing the response (thinking and spoken output share this limit)",
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_166",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 4,
+        "missed_turns": 1,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1946.9684999999995,
+        "response_latency_p95_ms": 1971.2644000000018,
+        "turn_end_lead_ms": 1206.020833333334,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_167",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 4,
+        "missed_turns": 1,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1524.9729999999995,
+        "response_latency_p95_ms": 1578.7304000000008,
+        "turn_end_lead_ms": 2902.041666666668,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_168",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 2680,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1395.5389999999989,
+        "response_latency_p95_ms": 1725.2341999999983,
+        "turn_end_lead_ms": 1718.0208333333358,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_169",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1775.4770000000008,
+        "response_latency_p95_ms": 1952.4980000000005,
+        "turn_end_lead_ms": 1110.0208333333321,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_17",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 4,
+        "missed_turns": 1,
+        "overlap_ms": 1520,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1738.8877499999999,
+        "response_latency_p95_ms": 1923.636799999998,
+        "turn_end_lead_ms": 2294.041666666666,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_170",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 1480,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1900.8085000000028,
+        "response_latency_p95_ms": 1954.4786500000027,
+        "turn_end_lead_ms": 1382,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_171",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 1320,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1751.0037499999999,
+        "response_latency_p95_ms": 1786.4711750000004,
+        "turn_end_lead_ms": 2214.062500000002,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_172",
+      "completed": true,
+      "passed": true,
+      "metrics": {
+        "answered": 5,
+        "missed_turns": 0,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1829.4189999999999,
+        "response_latency_p95_ms": 1957.0443999999986,
+        "turn_end_lead_ms": 1826,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_173",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 6000,
+        "overrun_turns": 3,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1826.6480000000001,
+        "response_latency_p95_ms": 1826.6480000000001,
+        "turn_end_lead_ms": 1370.0416666666697,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_174",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1790.9879999999998,
+        "response_latency_p95_ms": 1824.0657,
+        "turn_end_lead_ms": 1346.0625000000036,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_175",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 11240,
+        "overrun_turns": 3,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1809.0012500000012,
+        "response_latency_p95_ms": 1876.708025,
+        "turn_end_lead_ms": 1134.0833333333394,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_176",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 25000,
+        "overrun_turns": 3,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1884.3780000000006,
+        "response_latency_p95_ms": 1888.4352000000003,
+        "turn_end_lead_ms": 1498,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_177",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 8320,
+        "overrun_turns": 3,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1948.8934999999983,
+        "response_latency_p95_ms": 1948.8934999999983,
+        "turn_end_lead_ms": 1490.0416666666697,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_178",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 2,
+        "overlap_ms": 1200,
+        "overrun_turns": 0,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1953.0320000000002,
+        "response_latency_p95_ms": 1953.0320000000002,
+        "turn_end_lead_ms": 842.0208333333339,
+        "turns": 3
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_179",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 2720,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1730.0234999999993,
+        "response_latency_p95_ms": 1730.0234999999993,
+        "turn_end_lead_ms": 1068.041666666666,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_18",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 5120,
+        "overrun_turns": 2,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1490.8274999999994,
+        "response_latency_p95_ms": 1553.8414500000006,
+        "turn_end_lead_ms": 1646,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_180",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 1520,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1850.8694999999993,
+        "response_latency_p95_ms": 1874.2987499999983,
+        "turn_end_lead_ms": 1630.0208333333358,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_181",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 3080,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1779.0465000000004,
+        "response_latency_p95_ms": 1779.0465000000004,
+        "turn_end_lead_ms": 1708.0208333333321,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_182",
+      "completed": true,
+      "passed": true,
+      "metrics": {
+        "answered": 5,
+        "missed_turns": 0,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1794.8019999999997,
+        "response_latency_p95_ms": 1935.6622000000023,
+        "turn_end_lead_ms": 2234,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_183",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 5880,
+        "overrun_turns": 3,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1898.514250000001,
+        "response_latency_p95_ms": 1933.7935750000001,
+        "turn_end_lead_ms": 1118.041666666666,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_184",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 2,
+        "overlap_ms": 1760,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1822.1837500000001,
+        "response_latency_p95_ms": 1900.4223249999998,
+        "turn_end_lead_ms": 2292.0416666666642,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_185",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 2,
+        "overlap_ms": 16880,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1017.1217499999984,
+        "response_latency_p95_ms": 1801.692925,
+        "turn_end_lead_ms": 1416.041666666666,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_186",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1905.7439999999988,
+        "response_latency_p95_ms": 1905.7439999999988,
+        "turn_end_lead_ms": 1472.020833333334,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_187",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 8560,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1832.7930000000015,
+        "response_latency_p95_ms": 1832.7930000000015,
+        "turn_end_lead_ms": 1582.0416666666679,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_188",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 1960,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1812.4867499999991,
+        "response_latency_p95_ms": 1877.6586749999994,
+        "turn_end_lead_ms": 2186.0625,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_189",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 5,
+        "overlap_ms": 6800,
+        "overrun_turns": 4,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 1882.0416666666679,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_19",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 4,
+        "overlap_ms": 2000,
+        "overrun_turns": 0,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 752.0208333333321,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_190",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 5,
+        "overlap_ms": 12280,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 2078.0416666666697,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_191",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 1440,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1984.8860000000004,
+        "response_latency_p95_ms": 1984.8860000000004,
+        "turn_end_lead_ms": 2014.0416666666679,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_192",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 3160,
+        "overrun_turns": 0,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1857.5750000000007,
+        "response_latency_p95_ms": 1857.5750000000007,
+        "turn_end_lead_ms": 2026.0208333333321,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_193",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 8320,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1684.549500000001,
+        "response_latency_p95_ms": 1684.549500000001,
+        "turn_end_lead_ms": 2026.0416666666697,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_194",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 4,
+        "missed_turns": 1,
+        "overlap_ms": 4640,
+        "overrun_turns": 3,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1775.8410000000003,
+        "response_latency_p95_ms": 1953.4248000000018,
+        "turn_end_lead_ms": 1050,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_195",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 3280,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1812.8860000000004,
+        "response_latency_p95_ms": 1813.747749999999,
+        "turn_end_lead_ms": 1554.0624999999982,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_196",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 1200,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1827.7389999999996,
+        "response_latency_p95_ms": 1827.7389999999996,
+        "turn_end_lead_ms": 1408.0416666666679,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_197",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 4360,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1964.5690000000004,
+        "response_latency_p95_ms": 1964.5690000000004,
+        "turn_end_lead_ms": 1834.0208333333358,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_198",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 1680,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1855.536000000001,
+        "response_latency_p95_ms": 1879.6047000000021,
+        "turn_end_lead_ms": 1566,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_199",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 3120,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1959.0460000000003,
+        "response_latency_p95_ms": 1959.0460000000003,
+        "turn_end_lead_ms": 1318.0208333333358,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_2",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 5440,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1795.3830000000016,
+        "response_latency_p95_ms": 1795.3830000000016,
+        "turn_end_lead_ms": 1178.0208333333358,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_20",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 4160,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1898.3845000000001,
+        "response_latency_p95_ms": 1898.3845000000001,
+        "turn_end_lead_ms": 2514.0416666666642,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_200",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 2,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1880.5862499999994,
+        "response_latency_p95_ms": 1912.846974999999,
+        "turn_end_lead_ms": 1400.020833333334,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_201",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 6200,
+        "overrun_turns": 1,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1803.3220000000001,
+        "response_latency_p95_ms": 1803.3220000000001,
+        "turn_end_lead_ms": 1598.0416666666715,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_202",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 5,
+        "overlap_ms": 15800,
+        "overrun_turns": 3,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 1670.0208333333321,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_203",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 5,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 1130.041666666666,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_204",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 4,
+        "missed_turns": 1,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1844.9469999999983,
+        "response_latency_p95_ms": 1907.5467249999997,
+        "turn_end_lead_ms": 2018.020833333334,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_205",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 5,
+        "overlap_ms": 3360,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 706.0208333333358,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_206",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 840,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1739.9099999999999,
+        "response_latency_p95_ms": 1957.4305500000003,
+        "turn_end_lead_ms": 2178.041666666666,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_207",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 9280,
+        "overrun_turns": 1,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1708.6040000000003,
+        "response_latency_p95_ms": 1708.6040000000003,
+        "turn_end_lead_ms": 1152.020833333334,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_208",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 1920,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1948.266499999998,
+        "response_latency_p95_ms": 1948.266499999998,
+        "turn_end_lead_ms": 1360.0208333333321,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_209",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 5,
+        "overlap_ms": 8560,
+        "overrun_turns": 3,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 1890.020833333334,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_21",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 760,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1886.4360000000015,
+        "response_latency_p95_ms": 1886.4360000000015,
+        "turn_end_lead_ms": 1338.0625,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_210",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 5,
+        "overlap_ms": 13400,
+        "overrun_turns": 4,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 2042.0625000000055,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_211",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1930.8289999999997,
+        "response_latency_p95_ms": 1989.964400000003,
+        "turn_end_lead_ms": 2246,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_212",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 2,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1877.146249999998,
+        "response_latency_p95_ms": 1932.3025249999969,
+        "turn_end_lead_ms": 2044.041666666666,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_213",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 2,
+        "overlap_ms": 4280,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1753.1615000000006,
+        "response_latency_p95_ms": 1835.9025500000012,
+        "turn_end_lead_ms": 1584,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_214",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 3680,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 890.0709999999999,
+        "response_latency_p95_ms": 890.0709999999999,
+        "turn_end_lead_ms": 1750.0208333333321,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_215",
+      "completed": true,
+      "passed": true,
+      "metrics": {
+        "answered": 5,
+        "missed_turns": 0,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1850.0639999999985,
+        "response_latency_p95_ms": 1956.5650000000016,
+        "turn_end_lead_ms": 0,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_216",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 1,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1844.7200000000012,
+        "response_latency_p95_ms": 1939.4179999999988,
+        "turn_end_lead_ms": 1236,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_217",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 4,
+        "overlap_ms": 1920,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 868,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_218",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 12040,
+        "overrun_turns": 3,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1107.3675000000003,
+        "response_latency_p95_ms": 1107.3675000000003,
+        "turn_end_lead_ms": 1986.0208333333358,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_219",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 2,
+        "overlap_ms": 4920,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1930.1452499999996,
+        "response_latency_p95_ms": 1941.7311749999985,
+        "turn_end_lead_ms": 1332.0208333333321,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_22",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 5920,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1683.0040000000008,
+        "response_latency_p95_ms": 1683.0040000000008,
+        "turn_end_lead_ms": 1804,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_220",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 11120,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1891.3255000000008,
+        "response_latency_p95_ms": 1925.9071000000017,
+        "turn_end_lead_ms": 1718.041666666666,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_221",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 2,
+        "overlap_ms": 1000,
+        "overrun_turns": 0,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1638.9224999999988,
+        "response_latency_p95_ms": 1817.0212499999977,
+        "turn_end_lead_ms": 1304,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_222",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 2760,
+        "overrun_turns": 0,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1971.728500000001,
+        "response_latency_p95_ms": 1971.728500000001,
+        "turn_end_lead_ms": 396.02083333333394,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_223",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 5,
+        "overlap_ms": 2880,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 1958,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_224",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 3280,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1706.8867499999978,
+        "response_latency_p95_ms": 1819.701524999999,
+        "turn_end_lead_ms": 1134.0625000000018,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_225",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 6840,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1863.9319999999998,
+        "response_latency_p95_ms": 1863.9319999999998,
+        "turn_end_lead_ms": 1072.0416666666642,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_226",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 4160,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1734.3495000000003,
+        "response_latency_p95_ms": 1860.9502499999999,
+        "turn_end_lead_ms": 1734.0416666666697,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_227",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 2640,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1818.5095000000001,
+        "response_latency_p95_ms": 1880.5370500000001,
+        "turn_end_lead_ms": 1686.0208333333321,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_228",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 3240,
+        "overrun_turns": 1,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1875.828999999998,
+        "response_latency_p95_ms": 1875.828999999998,
+        "turn_end_lead_ms": 1442,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_229",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 2,
+        "overlap_ms": 6800,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1759.1307500000003,
+        "response_latency_p95_ms": 1823.669075,
+        "turn_end_lead_ms": 1864.041666666666,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_23",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 2000,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1812.5424999999996,
+        "response_latency_p95_ms": 1812.5424999999996,
+        "turn_end_lead_ms": 1654.041666666666,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_230",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 4840,
+        "overrun_turns": 1,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1449.700499999999,
+        "response_latency_p95_ms": 1449.700499999999,
+        "turn_end_lead_ms": 1010.0416666666715,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_231",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 2160,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1908.4129999999996,
+        "response_latency_p95_ms": 1908.4129999999996,
+        "turn_end_lead_ms": 1156.041666666666,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_232",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 32160,
+        "overrun_turns": 1,
+        "premature_turns": 2,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1507.8225000000002,
+        "response_latency_p95_ms": 1834.34475,
+        "turn_end_lead_ms": 1906,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_233",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 6960,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 363.057499999999,
+        "response_latency_p95_ms": 363.057499999999,
+        "turn_end_lead_ms": 936.0416666666642,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_234",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 10720,
+        "overrun_turns": 3,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1772.8320000000022,
+        "response_latency_p95_ms": 1772.8320000000022,
+        "turn_end_lead_ms": 2038.041666666666,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_235",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1691.4775000000009,
+        "response_latency_p95_ms": 1691.4775000000009,
+        "turn_end_lead_ms": 2870.041666666668,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_236",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 2,
+        "overlap_ms": 2040,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1912.9927500000003,
+        "response_latency_p95_ms": 1963.1837250000003,
+        "turn_end_lead_ms": 984.0416666666642,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_237",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 3760,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1653.994749999998,
+        "response_latency_p95_ms": 1833.9207249999984,
+        "turn_end_lead_ms": 1954.041666666666,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_238",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 8640,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1849.8125,
+        "response_latency_p95_ms": 1849.8125,
+        "turn_end_lead_ms": 2186.020833333332,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_239",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 2800,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1260.3004999999976,
+        "response_latency_p95_ms": 1882.456999999999,
+        "turn_end_lead_ms": 1582.041666666666,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_24",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 4,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 1152,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_240",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 2,
+        "overlap_ms": 6400,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1151.1602500000017,
+        "response_latency_p95_ms": 1836.8736250000002,
+        "turn_end_lead_ms": 1236.0416666666679,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_241",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 2080,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1709.4384999999966,
+        "response_latency_p95_ms": 1717.84405,
+        "turn_end_lead_ms": 2266.041666666668,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_242",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1153.809500000003,
+        "response_latency_p95_ms": 1153.809500000003,
+        "turn_end_lead_ms": 1758.0416666666697,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_243",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 2,
+        "overlap_ms": 11520,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1804.4099999999999,
+        "response_latency_p95_ms": 1975.6025999999997,
+        "turn_end_lead_ms": 1660.0208333333321,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_244",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 680,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1926.757500000002,
+        "response_latency_p95_ms": 1958.3128500000007,
+        "turn_end_lead_ms": 1970.0416666666679,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_245",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 14920,
+        "overrun_turns": 3,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1363.5075000000006,
+        "response_latency_p95_ms": 1572.9703500000005,
+        "turn_end_lead_ms": 2058.020833333332,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_246",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 1240,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1408.745750000001,
+        "response_latency_p95_ms": 1865.8717250000004,
+        "turn_end_lead_ms": 578.0208333333339,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_247",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 2,
+        "overlap_ms": 9520,
+        "overrun_turns": 0,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1748.5007499999997,
+        "response_latency_p95_ms": 1824.0541749999995,
+        "turn_end_lead_ms": 2224.041666666666,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_248",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 1440,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1841.3940000000002,
+        "response_latency_p95_ms": 1953.5790000000015,
+        "turn_end_lead_ms": 1506.0416666666679,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_249",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 22240,
+        "overrun_turns": 3,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 61.28900000000067,
+        "response_latency_p95_ms": 61.28900000000067,
+        "turn_end_lead_ms": 1346,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_25",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 5,
+        "overlap_ms": 5200,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 1194.0625,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_250",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 5,
+        "overlap_ms": 2720,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 962.0416666666661,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_251",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 558.3549999999996,
+        "response_latency_p95_ms": 558.3549999999996,
+        "turn_end_lead_ms": 1118.0416666666679,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_252",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 1,
+        "overlap_ms": 11880,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1787.2610000000004,
+        "response_latency_p95_ms": 1943.3444,
+        "turn_end_lead_ms": 1172.0416666666679,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_253",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 4760,
+        "overrun_turns": 3,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1533.6360000000004,
+        "response_latency_p95_ms": 1533.6360000000004,
+        "turn_end_lead_ms": 1350.041666666666,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_254",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 3200,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1987.893,
+        "response_latency_p95_ms": 1987.893,
+        "turn_end_lead_ms": 1404.041666666666,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_255",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 4,
+        "overlap_ms": 7800,
+        "overrun_turns": 1,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 1136.0208333333358,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_256",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 3400,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1779.7007500000009,
+        "response_latency_p95_ms": 1889.7952750000004,
+        "turn_end_lead_ms": 1310.0208333333358,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_257",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 2,
+        "overlap_ms": 2040,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1565.53975,
+        "response_latency_p95_ms": 1567.4794749999996,
+        "turn_end_lead_ms": 2060.041666666666,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_258",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 5,
+        "overlap_ms": 1000,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 1358.0208333333358,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_259",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 4240,
+        "overrun_turns": 2,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1643.981249999998,
+        "response_latency_p95_ms": 1664.9294249999996,
+        "turn_end_lead_ms": 2214.0833333333376,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_26",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 4720,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1956.572500000002,
+        "response_latency_p95_ms": 1956.572500000002,
+        "turn_end_lead_ms": 1798.0416666666679,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_260",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 10480,
+        "overrun_turns": 0,
+        "premature_turns": 2,
+        "premature_turns_after_speech_ended": 1,
+        "response_latency_ms": 865.2584999999999,
+        "response_latency_p95_ms": 865.2584999999999,
+        "turn_end_lead_ms": 872.0624999999982,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_261",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 9280,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1577.0477499999997,
+        "response_latency_p95_ms": 1613.8782249999995,
+        "turn_end_lead_ms": 2190.041666666668,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_262",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1988.1680000000015,
+        "response_latency_p95_ms": 1988.1680000000015,
+        "turn_end_lead_ms": 2742.0208333333358,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_263",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 5,
+        "overlap_ms": 28840,
+        "overrun_turns": 3,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 858,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_264",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 5,
+        "overlap_ms": 2920,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 1858,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_265",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 3640,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1875.6189999999988,
+        "response_latency_p95_ms": 1875.6189999999988,
+        "turn_end_lead_ms": 2128.0625,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_266",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 6720,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1949.9089999999997,
+        "response_latency_p95_ms": 1949.9089999999997,
+        "turn_end_lead_ms": 1024,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_267",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 20720,
+        "overrun_turns": 3,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1887.361499999999,
+        "response_latency_p95_ms": 1887.361499999999,
+        "turn_end_lead_ms": 1330.0416666666679,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_268",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 11200,
+        "overrun_turns": 1,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1860.8539999999998,
+        "response_latency_p95_ms": 1872.3100999999995,
+        "turn_end_lead_ms": 8080,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_269",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 5,
+        "overlap_ms": 22720,
+        "overrun_turns": 4,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 2150.0416666666715,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_27",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 6480,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1746.6819999999998,
+        "response_latency_p95_ms": 1746.6819999999998,
+        "turn_end_lead_ms": 1640.0208333333321,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_270",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 2560,
+        "overrun_turns": 0,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1790.6317500000005,
+        "response_latency_p95_ms": 1922.6003250000008,
+        "turn_end_lead_ms": 1798.0208333333321,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_271",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1929.5259999999998,
+        "response_latency_p95_ms": 1929.5259999999998,
+        "turn_end_lead_ms": 1254.0208333333321,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_272",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1763.0144999999993,
+        "response_latency_p95_ms": 1763.0144999999993,
+        "turn_end_lead_ms": 928.0624999999982,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_273",
+      "completed": true,
+      "passed": true,
+      "metrics": {
+        "answered": 4,
+        "missed_turns": 0,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1944.8540000000007,
+        "response_latency_p95_ms": 1991.89915,
+        "turn_end_lead_ms": 1640,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_274",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 4,
+        "overlap_ms": 6200,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 724.0208333333321,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_275",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 2400,
+        "overrun_turns": 0,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1479.444,
+        "response_latency_p95_ms": 1881.7107,
+        "turn_end_lead_ms": 1406.0208333333321,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_276",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1814.69875,
+        "response_latency_p95_ms": 1948.1766249999996,
+        "turn_end_lead_ms": 794.0624999999982,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_277",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 8200,
+        "overrun_turns": 1,
+        "premature_turns": 2,
+        "premature_turns_after_speech_ended": 1,
+        "response_latency_ms": 603.4039999999986,
+        "response_latency_p95_ms": 603.4039999999986,
+        "turn_end_lead_ms": 2254.020833333332,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_278",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 4,
+        "missed_turns": 1,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1763.4535,
+        "response_latency_p95_ms": 1790.7517,
+        "turn_end_lead_ms": 1970,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_279",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 3240,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1907.3760000000002,
+        "response_latency_p95_ms": 1907.3760000000002,
+        "turn_end_lead_ms": 1164.0208333333321,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_28",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 5440,
+        "overrun_turns": 3,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1872.9950000000026,
+        "response_latency_p95_ms": 1872.9950000000026,
+        "turn_end_lead_ms": 958.0208333333321,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_280",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 12480,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1929.361499999999,
+        "response_latency_p95_ms": 1929.361499999999,
+        "turn_end_lead_ms": 1706.0625000000036,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_281",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 6840,
+        "overrun_turns": 3,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1947.4309999999969,
+        "response_latency_p95_ms": 1947.4309999999969,
+        "turn_end_lead_ms": 1436,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_282",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1954.0995000000003,
+        "response_latency_p95_ms": 1963.9801499999996,
+        "turn_end_lead_ms": 1786.0625000000036,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_283",
+      "completed": false,
+      "passed": false,
+      "error": "the session reported a failure: Gemini exhausted its output token limit before completing the response (thinking and spoken output share this limit)",
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_284",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 2,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1989.4710000000014,
+        "response_latency_p95_ms": 1990.312050000001,
+        "turn_end_lead_ms": 832.0416666666679,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_285",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1960.4565000000002,
+        "response_latency_p95_ms": 1966.1008500000025,
+        "turn_end_lead_ms": 1382.020833333334,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_286",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1752.2200000000003,
+        "response_latency_p95_ms": 1852.0502500000016,
+        "turn_end_lead_ms": 1842.0416666666697,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_287",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 4,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 876,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_288",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 5,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 1558.0208333333321,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_289",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 1,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1955.5625,
+        "response_latency_p95_ms": 1969.5966500000006,
+        "turn_end_lead_ms": 1248.0208333333321,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_29",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 40,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1666.1059999999998,
+        "response_latency_p95_ms": 1914.7832000000005,
+        "turn_end_lead_ms": 1866.0208333333321,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_290",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1613.253499999999,
+        "response_latency_p95_ms": 1823.4642499999998,
+        "turn_end_lead_ms": 1694.0416666666679,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_291",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 5,
+        "overlap_ms": 1040,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 1050.0416666666642,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_292",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1860.2224999999999,
+        "response_latency_p95_ms": 1883.6625499999998,
+        "turn_end_lead_ms": 1482.0624999999982,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_293",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 6480,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1218.726499999997,
+        "response_latency_p95_ms": 1218.726499999997,
+        "turn_end_lead_ms": 848.0208333333321,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_3",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 4,
+        "overlap_ms": 4000,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 1028,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_30",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 4520,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1979.3249999999998,
+        "response_latency_p95_ms": 1979.3249999999998,
+        "turn_end_lead_ms": 1368.0208333333321,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_31",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1937.5604999999996,
+        "response_latency_p95_ms": 1980.63315,
+        "turn_end_lead_ms": 1326.0208333333321,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_32",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 10160,
+        "overrun_turns": 3,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1577.0672499999991,
+        "response_latency_p95_ms": 1758.3733749999983,
+        "turn_end_lead_ms": 2342.041666666668,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_33",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 12840,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1755.987,
+        "response_latency_p95_ms": 1755.987,
+        "turn_end_lead_ms": 1298.0208333333358,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_34",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 7040,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1789.4439999999995,
+        "response_latency_p95_ms": 1865.0953000000002,
+        "turn_end_lead_ms": 1262.020833333334,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_35",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 2,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1786.8635000000013,
+        "response_latency_p95_ms": 1818.3576500000033,
+        "turn_end_lead_ms": 1816,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_36",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 4000,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1707.9040000000005,
+        "response_latency_p95_ms": 1707.9040000000005,
+        "turn_end_lead_ms": 1634.083333333334,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_37",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 560,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1986.4844999999987,
+        "response_latency_p95_ms": 1993.9207500000002,
+        "turn_end_lead_ms": 1006.0208333333321,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_38",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 4,
+        "missed_turns": 1,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1934.4424999999997,
+        "response_latency_p95_ms": 1986.434374999999,
+        "turn_end_lead_ms": 2242.0208333333358,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_39",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1886.6409999999996,
+        "response_latency_p95_ms": 1886.6409999999996,
+        "turn_end_lead_ms": 5056,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_4",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 5,
+        "overlap_ms": 4880,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 774.0208333333321,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_40",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 4,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 672.0416666666642,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_41",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 10080,
+        "overrun_turns": 1,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 1,
+        "response_latency_ms": 1925.8719999999994,
+        "response_latency_p95_ms": 1925.8719999999994,
+        "turn_end_lead_ms": 976,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_42",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 1920,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1821.0985,
+        "response_latency_p95_ms": 1821.0985,
+        "turn_end_lead_ms": 880.0208333333321,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_43",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 4,
+        "missed_turns": 1,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1906.609500000001,
+        "response_latency_p95_ms": 1965.6882750000022,
+        "turn_end_lead_ms": 1778.0416666666679,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_44",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 3080,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1980.2900000000009,
+        "response_latency_p95_ms": 1980.2900000000009,
+        "turn_end_lead_ms": 1300,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_45",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 760,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1882.005,
+        "response_latency_p95_ms": 1919.76045,
+        "turn_end_lead_ms": 1886.020833333334,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_46",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1980.3650000000016,
+        "response_latency_p95_ms": 1980.3650000000016,
+        "turn_end_lead_ms": 1794,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_47",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 14160,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1914.786,
+        "response_latency_p95_ms": 1914.786,
+        "turn_end_lead_ms": 812.0416666666642,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_48",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1899.5894999999982,
+        "response_latency_p95_ms": 1902.7070999999999,
+        "turn_end_lead_ms": 1890.0625000000018,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_49",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 600,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1981.3729999999996,
+        "response_latency_p95_ms": 1981.3729999999996,
+        "turn_end_lead_ms": 1178.0208333333321,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_5",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1659.1080000000002,
+        "response_latency_p95_ms": 1677.6637500000004,
+        "turn_end_lead_ms": 1170.0625000000018,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_50",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 4,
+        "missed_turns": 1,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1844.259250000001,
+        "response_latency_p95_ms": 1912.239125,
+        "turn_end_lead_ms": 1650.0416666666715,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_51",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 5920,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1843.2569999999996,
+        "response_latency_p95_ms": 1843.2569999999996,
+        "turn_end_lead_ms": 1926,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_52",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 4,
+        "missed_turns": 0,
+        "overlap_ms": 1200,
+        "overrun_turns": 0,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1736.826,
+        "response_latency_p95_ms": 1895.743649999999,
+        "turn_end_lead_ms": 828,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_53",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 4680,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1685.0345000000016,
+        "response_latency_p95_ms": 1685.0345000000016,
+        "turn_end_lead_ms": 2186.0625000000036,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_54",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 240,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1652.2535000000007,
+        "response_latency_p95_ms": 1652.2535000000007,
+        "turn_end_lead_ms": 1382.0625000000018,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_55",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 2080,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1857.12,
+        "response_latency_p95_ms": 1857.12,
+        "turn_end_lead_ms": 2310.020833333332,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_56",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1843.0795000000007,
+        "response_latency_p95_ms": 1948.84615,
+        "turn_end_lead_ms": 1790.0416666666697,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_57",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 4,
+        "overlap_ms": 12040,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 1520.0208333333321,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_58",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1886.7179999999998,
+        "response_latency_p95_ms": 1929.1223999999988,
+        "turn_end_lead_ms": 1764.0208333333358,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_59",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 5280,
+        "overrun_turns": 1,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 1,
+        "response_latency_ms": 842.7359999999971,
+        "response_latency_p95_ms": 842.7359999999971,
+        "turn_end_lead_ms": 1094.0416666666642,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_6",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 4760,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1627.285750000001,
+        "response_latency_p95_ms": 1773.1566249999998,
+        "turn_end_lead_ms": 2334.062500000002,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_60",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 4,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 660.0208333333321,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_61",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 16080,
+        "overrun_turns": 3,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1908.4137500000002,
+        "response_latency_p95_ms": 1960.8448250000004,
+        "turn_end_lead_ms": 1458.0208333333321,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_62",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 3800,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1672.8270000000011,
+        "response_latency_p95_ms": 1870.0718999999979,
+        "turn_end_lead_ms": 1702,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_63",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 6240,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1791.5060000000008,
+        "response_latency_p95_ms": 1806.439700000002,
+        "turn_end_lead_ms": 1738.0208333333321,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_64",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1395.223,
+        "response_latency_p95_ms": 1869.3565000000003,
+        "turn_end_lead_ms": 2162.041666666666,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_65",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 5,
+        "overlap_ms": 6040,
+        "overrun_turns": 3,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 1030.0625000000018,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_66",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 3400,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1752.027,
+        "response_latency_p95_ms": 1752.027,
+        "turn_end_lead_ms": 2074.041666666668,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_67",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 6040,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1906.0365000000002,
+        "response_latency_p95_ms": 1963.57125,
+        "turn_end_lead_ms": 1178,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_68",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1961.8910000000014,
+        "response_latency_p95_ms": 1978.3826000000001,
+        "turn_end_lead_ms": 1746.0208333333321,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_69",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 1480,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1911.308000000001,
+        "response_latency_p95_ms": 1944.7484,
+        "turn_end_lead_ms": 1298.020833333334,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_7",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 5,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 1058.020833333334,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_70",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 12840,
+        "overrun_turns": 3,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 1,
+        "response_latency_ms": 1433.224000000002,
+        "response_latency_p95_ms": 1912.8582999999983,
+        "turn_end_lead_ms": 13682.020833333336,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_71",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 1720,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1900.5034999999998,
+        "response_latency_p95_ms": 1934.3367499999997,
+        "turn_end_lead_ms": 1062.0208333333321,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_72",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 4,
+        "missed_turns": 1,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1884.1107499999998,
+        "response_latency_p95_ms": 1970.9252249999995,
+        "turn_end_lead_ms": 1706.0208333333321,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_73",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 2,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1806.0594999999994,
+        "response_latency_p95_ms": 1861.157949999999,
+        "turn_end_lead_ms": 1212.0208333333321,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_74",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 4320,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1666.0607499999987,
+        "response_latency_p95_ms": 1906.7448249999993,
+        "turn_end_lead_ms": 1274.020833333334,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_75",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 1880,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1880.9685000000027,
+        "response_latency_p95_ms": 1966.1562000000013,
+        "turn_end_lead_ms": 1502.0416666666679,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_76",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 7640,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1964.2774999999997,
+        "response_latency_p95_ms": 1970.09105,
+        "turn_end_lead_ms": 1466.0416666666679,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_77",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 4,
+        "missed_turns": 1,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1936.2700000000004,
+        "response_latency_p95_ms": 1973.7369750000025,
+        "turn_end_lead_ms": 3042.0208333333358,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_78",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 1680,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1720.696,
+        "response_latency_p95_ms": 1768.8774999999996,
+        "turn_end_lead_ms": 1074.020833333334,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_79",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 4,
+        "missed_turns": 1,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1758.7774999999997,
+        "response_latency_p95_ms": 1790.3056,
+        "turn_end_lead_ms": 1898.0208333333321,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_8",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 1,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1962.478,
+        "response_latency_p95_ms": 1983.6090999999985,
+        "turn_end_lead_ms": 760.0208333333321,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_80",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 5120,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1680.5115000000005,
+        "response_latency_p95_ms": 1680.5115000000005,
+        "turn_end_lead_ms": 2202.083333333334,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_81",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 2,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1689.1745,
+        "response_latency_p95_ms": 1776.97625,
+        "turn_end_lead_ms": 1316.0208333333321,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_82",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1894.6222500000003,
+        "response_latency_p95_ms": 1961.0834250000007,
+        "turn_end_lead_ms": 1822.041666666666,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_83",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1901.2704999999992,
+        "response_latency_p95_ms": 1941.42715,
+        "turn_end_lead_ms": 1794,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_84",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1801.3060000000005,
+        "response_latency_p95_ms": 1840.4452000000017,
+        "turn_end_lead_ms": 1714,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_85",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 2880,
+        "overrun_turns": 1,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1729.7355000000025,
+        "response_latency_p95_ms": 1729.7355000000025,
+        "turn_end_lead_ms": 1650.0208333333358,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_86",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 5,
+        "overlap_ms": 8760,
+        "overrun_turns": 3,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 1538,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_87",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1776.6015000000007,
+        "response_latency_p95_ms": 1776.6015000000007,
+        "turn_end_lead_ms": 2178.0416666666697,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_88",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1947.9130000000005,
+        "response_latency_p95_ms": 1947.9130000000005,
+        "turn_end_lead_ms": 1446,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_89",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1848.1560000000027,
+        "response_latency_p95_ms": 1848.1560000000027,
+        "turn_end_lead_ms": 1646.020833333334,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_9",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 5200,
+        "overrun_turns": 3,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1972.9375,
+        "response_latency_p95_ms": 1972.9375,
+        "turn_end_lead_ms": 1894.0625,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_90",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1880.6130000000012,
+        "response_latency_p95_ms": 1963.1231999999977,
+        "turn_end_lead_ms": 1026.0208333333358,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_91",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 1760,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1935.8767499999994,
+        "response_latency_p95_ms": 1939.0715250000012,
+        "turn_end_lead_ms": 1670.041666666666,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_92",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 5,
+        "overlap_ms": 5880,
+        "overrun_turns": 3,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 970.0208333333339,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_93",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 0,
+        "overrun_turns": 0,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1743.5027500000006,
+        "response_latency_p95_ms": 1897.8138250000006,
+        "turn_end_lead_ms": 1546.0625,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_94",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 3360,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1958.333,
+        "response_latency_p95_ms": 1988.4623000000004,
+        "turn_end_lead_ms": 1178.0416666666642,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_95",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 6200,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1860.2669999999998,
+        "response_latency_p95_ms": 1860.2669999999998,
+        "turn_end_lead_ms": 1578.0625000000018,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_96",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 4080,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1846.546000000002,
+        "response_latency_p95_ms": 1846.546000000002,
+        "turn_end_lead_ms": 1506.020833333334,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_97",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 4,
+        "overlap_ms": 840,
+        "overrun_turns": 1,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 1380.020833333334,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_98",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 4360,
+        "overrun_turns": 0,
+        "premature_turns": 1,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1725.737000000001,
+        "response_latency_p95_ms": 1725.737000000001,
+        "turn_end_lead_ms": 1826.0208333333321,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_99",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 7040,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1670.8434999999986,
+        "response_latency_p95_ms": 1889.6096500000003,
+        "turn_end_lead_ms": 1638.0624999999982,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    }
+  ],
+  "summary": {
+    "completed": 289,
+    "failed": 4,
+    "passed": 4,
+    "pass_rate": 0.01384083044982699,
+    "complete": false,
+    "incompleteness": "4 of 293 tasks did not complete",
+    "distributions": {
+      "answered": {
+        "count": 289,
+        "unit": "count",
+        "min": 0,
+        "p50": 2,
+        "p90": 3,
+        "p95": 4,
+        "p99": 5,
+        "max": 5,
+        "mean": 1.6505190311418685
+      },
+      "missed_turns": {
+        "count": 289,
+        "unit": "count",
+        "min": 0,
+        "p50": 3,
+        "p90": 4,
+        "p95": 5,
+        "p99": 5,
+        "max": 5,
+        "mean": 3.065743944636678
+      },
+      "overlap_ms": {
+        "count": 289,
+        "unit": "ms",
+        "min": 0,
+        "p50": 2160,
+        "p90": 9456,
+        "p95": 12695.999999999987,
+        "p99": 22993.60000000001,
+        "max": 32160,
+        "mean": 3793.7716262975778
+      },
+      "overrun_turns": {
+        "count": 289,
+        "unit": "count",
+        "min": 0,
+        "p50": 1,
+        "p90": 3,
+        "p95": 3,
+        "p99": 4,
+        "max": 4,
+        "mean": 1.1107266435986158
+      },
+      "premature_turns": {
+        "count": 289,
+        "unit": "count",
+        "min": 0,
+        "p50": 0,
+        "p90": 1,
+        "p95": 1,
+        "p99": 2,
+        "max": 2,
+        "mean": 0.1453287197231834
+      },
+      "premature_turns_after_speech_ended": {
+        "count": 289,
+        "unit": "count",
+        "min": 0,
+        "p50": 0,
+        "p90": 0,
+        "p95": 0,
+        "p99": 1,
+        "max": 1,
+        "mean": 0.01730103806228374
+      },
+      "response_latency_ms": {
+        "count": 243,
+        "unit": "ms",
+        "min": 61.28900000000067,
+        "p50": 1818.5095000000001,
+        "p90": 1952.4387000000002,
+        "p95": 1971.0125500000008,
+        "p99": 1988.9237400000015,
+        "max": 1993.9735,
+        "mean": 1751.2775432098772
+      },
+      "response_latency_p95_ms": {
+        "count": 243,
+        "unit": "ms",
+        "min": 61.28900000000067,
+        "p50": 1888.4352000000003,
+        "p90": 1973.577080000002,
+        "p95": 1983.4370799999988,
+        "p99": 1992.591583,
+        "max": 1993.9735,
+        "mean": 1819.7951076131694
+      },
+      "turn_end_lead_ms": {
+        "count": 289,
+        "unit": "ms",
+        "min": 0,
+        "p50": 1538,
+        "p90": 2182.820833333335,
+        "p95": 2264.4333333333334,
+        "p99": 3283.6983333333446,
+        "max": 13682.020833333336,
+        "mean": 1604.8525807381775
+      },
+      "turns": {
+        "count": 289,
+        "unit": "count",
+        "min": 3,
+        "p50": 5,
+        "p90": 5,
+        "p95": 5,
+        "p99": 5,
+        "max": 5,
+        "mean": 4.716262975778546
+      }
+    }
+  }
+}

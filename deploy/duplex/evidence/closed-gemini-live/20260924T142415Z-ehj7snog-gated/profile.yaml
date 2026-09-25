@@ -11,7 +11,3 @@ upstream-token-env: GEMINI_API_KEY
 slow-provider: google
 slow-model: gemini-3.5-flash
 slow-token-env: GEMINI_API_KEY
-# gemini-3.5-flash spends its thinking from the same output budget; at the
-# default 2048 it ended 51 of the 2026-09-24 campaign's sessions with
-# MAX_TOKENS, which fails the whole voice session.
-slow-max-tokens: 8192

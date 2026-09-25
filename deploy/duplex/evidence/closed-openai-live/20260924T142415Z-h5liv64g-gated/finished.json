@@ -1,0 +1,121 @@
+{
+  "finished": "2026-09-24T22:14:47.574002+00:00",
+  "exit_code": 0,
+  "errors": [],
+  "commands": {
+    "fdb-user_interruption.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-b7b68848",
+        "bench",
+        "fdb",
+        "-categories",
+        "user_interruption",
+        "-limit",
+        "0",
+        "-wait-configured",
+        "-endpoint",
+        "ws://127.0.0.1:9312/v1/realtime",
+        "-cell",
+        "closed-openai-live",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/closed-openai-live/runs/20260924T142415Z-h5liv64g/fdb-user_interruption.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    },
+    "fdb-user_backchannel.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-b7b68848",
+        "bench",
+        "fdb",
+        "-categories",
+        "user_backchannel",
+        "-limit",
+        "0",
+        "-wait-configured",
+        "-endpoint",
+        "ws://127.0.0.1:9312/v1/realtime",
+        "-cell",
+        "closed-openai-live",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/closed-openai-live/runs/20260924T142415Z-h5liv64g/fdb-user_backchannel.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    },
+    "fdb-background_speech.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-b7b68848",
+        "bench",
+        "fdb",
+        "-categories",
+        "background_speech",
+        "-limit",
+        "0",
+        "-wait-configured",
+        "-endpoint",
+        "ws://127.0.0.1:9312/v1/realtime",
+        "-cell",
+        "closed-openai-live",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/closed-openai-live/runs/20260924T142415Z-h5liv64g/fdb-background_speech.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    },
+    "fdb-talking_to_other.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-b7b68848",
+        "bench",
+        "fdb",
+        "-categories",
+        "talking_to_other",
+        "-limit",
+        "0",
+        "-wait-configured",
+        "-endpoint",
+        "ws://127.0.0.1:9312/v1/realtime",
+        "-cell",
+        "closed-openai-live",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/closed-openai-live/runs/20260924T142415Z-h5liv64g/fdb-talking_to_other.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    },
+    "fdbench.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-b7b68848",
+        "bench",
+        "fdbench",
+        "-conditions",
+        "cosyvoice2-single-round-combine-med",
+        "-limit",
+        "0",
+        "-wait-configured",
+        "-endpoint",
+        "ws://127.0.0.1:9312/v1/realtime",
+        "-cell",
+        "closed-openai-live",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/closed-openai-live/runs/20260924T142415Z-h5liv64g/fdbench.json"
+      ],
+      "exit_code": 0,
+      "error": ""
+    }
+  },
+  "load_average_end": [
+    "94.78",
+    "82.80",
+    "75.82"
+  ],
+  "sha256": {
+    "run.json": "de38bc0fe3fbdc4dc713986f1e797b9d6c139002d54433f04816bcdc60f2811a",
+    "profile.yaml": "bb335e957f38575d8e9fa74842fb29184d74f9ede3d398007ae2684b932fae98",
+    "fdb-user_interruption.json": "54b73e24ce6c732f33a79638e65dde01290e820e6d2cfffce9da98fe34739dd2",
+    "fdb-user_backchannel.json": "289b48ffe663643d14d574e938acb164e1e76a3b3866b3793551c92334295732",
+    "fdb-background_speech.json": "b5ee953f859fbf361970c510bdcc9f3718b2f0b7bb86fec128cdda2a007cf790",
+    "fdb-talking_to_other.json": "682ab8aee477adb99f61a09f9eb3f98085c2d2599add39f9793c8ea563cf4123",
+    "fdbench.json": "50eead86e6e6f185f84a09cccf1affb54d833333d35346ac89eee0367ddc9277"
+  }
+}
