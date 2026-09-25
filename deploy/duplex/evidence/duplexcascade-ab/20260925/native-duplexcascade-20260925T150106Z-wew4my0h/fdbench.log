@@ -1,0 +1,26 @@
+[1/12] cosyvoice2-single-round-combine-med/conversation_1
+[2/12] cosyvoice2-single-round-combine-med/conversation_10
+[3/12] cosyvoice2-single-round-combine-med/conversation_100
+[4/12] cosyvoice2-single-round-combine-med/conversation_101
+[5/12] cosyvoice2-single-round-combine-med/conversation_102
+[6/12] cosyvoice2-single-round-combine-med/conversation_103
+[7/12] cosyvoice2-single-round-combine-med/conversation_104
+[8/12] cosyvoice2-single-round-combine-med/conversation_105
+[9/12] cosyvoice2-single-round-combine-med/conversation_106
+[10/12] cosyvoice2-single-round-combine-med/conversation_107
+[11/12] cosyvoice2-single-round-combine-med/conversation_108
+[12/12] cosyvoice2-single-round-combine-med/conversation_109
+
+cell       : F1=cascade F10=slow-only F11=3fps F12=qwen3-asr F2=fast+slow F3=audio F4=200ms F5=engine F6=hosted-high F7=narration F8=none F9=local-text
+provenance : e7e659b6d6e2 on ubuntu
+tasks      : 12 completed, 0 failed, of 293 expected
+clean      : 0 of 12 conversations answered every turn without interrupting
+  response_latency_ms      p50 558 ms   p95 1501 ms  max 1741 ms
+  response_latency_p95_ms  p50 1371 ms  p95 1826 ms  max 1835 ms
+  missed_turns             p50 3        p95 4.45     max 5
+  premature_turns          p50 0        p95 0.45     max 1
+  overrun_turns            p50 4        p95 4        max 4
+  overlap_ms               p50 7990 ms  p95 13624 ms max 14020 ms
+
+NOT REPORTABLE: cell "native-duplexcascade" is not reportable: 281 of 293 tasks were not attempted
+written to /home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/native-duplexcascade/runs/20260925T150106Z-wew4my0h/fdbench.json

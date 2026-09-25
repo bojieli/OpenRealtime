@@ -1,0 +1,331 @@
+{
+  "suite": "fdb-v1.5",
+  "cell": {
+    "name": "native-duplexcascade",
+    "levels": {
+      "F1": "cascade",
+      "F10": "slow-only",
+      "F11": "3fps",
+      "F12": "qwen3-asr",
+      "F2": "fast+slow",
+      "F3": "audio",
+      "F4": "200ms",
+      "F5": "engine",
+      "F6": "hosted-high",
+      "F7": "narration",
+      "F8": "none",
+      "F9": "local-text"
+    }
+  },
+  "provenance": {
+    "revision": "e7e659b6d6e21b494d8d7839de8fb217f7ddc89e",
+    "modified": false,
+    "executable_sha256": "a5c9514ff29716b2246b15a75dd78967c925075559e408184652d5cae4c1e9d8",
+    "machine": {
+      "cpu": "13th Gen Intel(R) Core(TM) i9-13900KS",
+      "cores": 32,
+      "gpu": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+      "os": "linux",
+      "arch": "amd64",
+      "go_version": "go1.25.14",
+      "hostname": "ubuntu"
+    },
+    "started_at": "2026-09-25T15:44:53Z",
+    "finished_at": "2026-09-25T16:00:02Z"
+  },
+  "expected_tasks": 100,
+  "tasks": [
+    {
+      "id": "background_speech/1",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 860,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 440,
+        "agent_audio_hold_window_ms": 860,
+        "agent_playout_after_event_ms": 856.2439999999997,
+        "agent_playout_at_event_ms": 80.4340000000002,
+        "event_audible_after_ms": 20
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Turn on the study lamp.",
+        "event": "Oh, it's starting to rain outside."
+      }
+    },
+    {
+      "id": "background_speech/2",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 860,
+        "agent_audio_at_event_ms": 120,
+        "agent_audio_before_event_ms": 440,
+        "agent_audio_hold_window_ms": 860,
+        "agent_playout_after_event_ms": 864.107,
+        "agent_playout_at_event_ms": 90.29500000000007,
+        "event_audible_after_ms": 60
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Remind me to call Mom later today.",
+        "event": "We need to replace the batteries."
+      }
+    },
+    {
+      "id": "background_speech/3",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 320,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 0,
+        "agent_playout_after_event_ms": 311.6149999999998,
+        "agent_playout_at_event_ms": 0,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "background_speech",
+        "context": "What's the time in Tokyo?",
+        "event": "Do we have any milk left?"
+      }
+    },
+    {
+      "id": "background_speech/4",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 80,
+        "agent_playout_after_event_ms": 46.66700000000037,
+        "agent_playout_at_event_ms": 0,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "background_speech",
+        "context": "What's the definition of serendipity?",
+        "event": "Have you seen my glasses anywhere?"
+      }
+    },
+    {
+      "id": "background_speech/5",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 820,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 0,
+        "agent_playout_after_event_ms": 820,
+        "agent_playout_at_event_ms": 0,
+        "event_audible_after_ms": 140
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "background_speech",
+        "context": "Show me photos from last summer.",
+        "event": "Could you turn the TV down a bit?"
+      }
+    },
+    {
+      "id": "background_speech/6",
+      "completed": false,
+      "passed": false,
+      "error": "the conversation did not finish before the timeout",
+      "notes": {
+        "category": "background_speech",
+        "context": "Start a group call with the project team.",
+        "event": "We need to replace the batteries."
+      }
+    },
+    {
+      "id": "background_speech/7",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 80,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 0,
+        "agent_playout_after_event_ms": 80,
+        "agent_playout_at_event_ms": 0,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "background_speech",
+        "context": "Remind me to stretch at 3 PM.",
+        "event": "What do you want for dinner tonight?"
+      }
+    },
+    {
+      "id": "background_speech/8",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 820,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 420,
+        "agent_audio_hold_window_ms": 820,
+        "agent_playout_after_event_ms": 833.4519999999993,
+        "agent_playout_at_event_ms": 69.6850000000004,
+        "event_audible_after_ms": 80
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "What's my current heart rate?",
+        "event": "I think we ran out of paper towels."
+      }
+    },
+    {
+      "id": "background_speech/9",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 0,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 0,
+        "agent_playout_after_event_ms": 0,
+        "agent_playout_at_event_ms": 0,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "background_speech",
+        "context": "Add bananas to my grocery list.",
+        "event": "Mom, have you fed the cat yet?"
+      }
+    },
+    {
+      "id": "background_speech/10",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 600,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 260,
+        "agent_audio_hold_window_ms": 600,
+        "agent_playout_after_event_ms": 595.7690000000002,
+        "agent_playout_at_event_ms": 88.22100000000046,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "background_speech",
+        "context": "Translate 'good evening' to French.",
+        "event": "We should water the plants later."
+      }
+    }
+  ],
+  "summary": {
+    "completed": 9,
+    "failed": 1,
+    "passed": 4,
+    "not_applicable": 5,
+    "pass_rate": 1,
+    "complete": false,
+    "incompleteness": "90 of 100 tasks were not attempted",
+    "distributions": {
+      "agent_audio_after_event_ms": {
+        "count": 9,
+        "unit": "ms",
+        "min": 0,
+        "p50": 600,
+        "p90": 860,
+        "p95": 860,
+        "p99": 860,
+        "max": 860,
+        "mean": 493.3333333333333
+      },
+      "agent_audio_at_event_ms": {
+        "count": 9,
+        "unit": "ms",
+        "min": 0,
+        "p50": 0,
+        "p90": 88,
+        "p95": 103.99999999999999,
+        "p99": 116.8,
+        "max": 120,
+        "mean": 40
+      },
+      "agent_audio_before_event_ms": {
+        "count": 9,
+        "unit": "ms",
+        "min": 0,
+        "p50": 80,
+        "p90": 440,
+        "p95": 440,
+        "p99": 440,
+        "max": 440,
+        "mean": 182.22222222222223
+      },
+      "agent_audio_hold_window_ms": {
+        "count": 4,
+        "unit": "ms",
+        "min": 600,
+        "p50": 840,
+        "p90": 860,
+        "p95": 860,
+        "p99": 860,
+        "max": 860,
+        "mean": 785
+      },
+      "agent_playout_after_event_ms": {
+        "count": 9,
+        "unit": "ms",
+        "min": 0,
+        "p50": 595.7690000000002,
+        "p90": 857.8165999999998,
+        "p95": 860.9617999999998,
+        "p99": 863.4779599999999,
+        "max": 864.107,
+        "mean": 489.7615555555555
+      },
+      "agent_playout_at_event_ms": {
+        "count": 9,
+        "unit": "ms",
+        "min": 0,
+        "p50": 0,
+        "p90": 88.63580000000037,
+        "p95": 89.46540000000023,
+        "p99": 90.1290800000001,
+        "max": 90.29500000000007,
+        "mean": 36.51500000000013
+      },
+      "event_audible_after_ms": {
+        "count": 9,
+        "unit": "ms",
+        "min": 20,
+        "p50": 120,
+        "p90": 124,
+        "p95": 132,
+        "p99": 138.39999999999998,
+        "max": 140,
+        "mean": 91.11111111111111
+      }
+    }
+  }
+}

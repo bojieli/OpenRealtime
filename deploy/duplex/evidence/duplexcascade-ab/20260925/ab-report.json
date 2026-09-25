@@ -1,0 +1,150 @@
+{
+ "native-duplexcascade": {
+  "run": "20260925T150106Z-wew4my0h",
+  "exit_code": 1,
+  "errors": [
+   "fdb-user_interruption.json: exit 0; 3 task errors",
+   "fdb-user_backchannel.json: exit 0; 8 task errors",
+   "fdb-background_speech.json: exit 0; 1 task errors",
+   "fdb-talking_to_other.json: exit 0; incomplete benchmark: 90 of 100 tasks were not attempted",
+   "fdbench.json: exit 0; incomplete benchmark: 281 of 293 tasks were not attempted"
+  ],
+  "load_average": [
+   [
+    "77.01",
+    "56.13",
+    "29.09"
+   ],
+   [
+    "338.01",
+    "308.63",
+    "294.87"
+   ]
+  ],
+  "scores": {
+   "user_interruption": {
+    "passed": 1,
+    "applicable": 4,
+    "recordings": 10,
+    "errors": 3,
+    "timeouts": 3
+   },
+   "user_backchannel": {
+    "passed": 1,
+    "applicable": 1,
+    "recordings": 10,
+    "errors": 8,
+    "timeouts": 8
+   },
+   "background_speech": {
+    "passed": 4,
+    "applicable": 4,
+    "recordings": 10,
+    "errors": 1,
+    "timeouts": 1
+   },
+   "talking_to_other": {
+    "passed": 7,
+    "applicable": 7,
+    "recordings": 10,
+    "errors": 0,
+    "timeouts": 0
+   },
+   "fdbench": {
+    "passed": 0,
+    "conversations": 12,
+    "errors": 0,
+    "answered": 16,
+    "turns": 55,
+    "missed": 39,
+    "premature": 1,
+    "overrun": 41
+   }
+  },
+  "clock": {
+   "ticks": 8490,
+   "generated": 8490,
+   "skipped": 0,
+   "deadline_missed": 1978,
+   "missed_fraction": 0.233,
+   "compute_p50_ms": 325,
+   "queued_audio_p50_s": 30.0,
+   "queued_audio_max_s": 30.0,
+   "time_at_full_queue": 0.531
+  }
+ },
+ "native-duplexcascade-bounded": {
+  "run": "20260925T164108Z-bp_joews",
+  "exit_code": 1,
+  "errors": [
+   "fdb-user_interruption.json: exit 0; 3 task errors",
+   "fdb-user_backchannel.json: exit 0; 9 task errors",
+   "fdb-background_speech.json: exit 0; 2 task errors",
+   "fdb-talking_to_other.json: exit 0; incomplete benchmark: 90 of 100 tasks were not attempted",
+   "fdbench.json: exit 0; incomplete benchmark: 281 of 293 tasks were not attempted"
+  ],
+  "load_average": [
+   [
+    "342.27",
+    "322.73",
+    "301.95"
+   ],
+   [
+    "398.48",
+    "409.33",
+    "431.50"
+   ]
+  ],
+  "scores": {
+   "user_interruption": {
+    "passed": 1,
+    "applicable": 5,
+    "recordings": 10,
+    "errors": 3,
+    "timeouts": 3
+   },
+   "user_backchannel": {
+    "passed": 1,
+    "applicable": 1,
+    "recordings": 10,
+    "errors": 9,
+    "timeouts": 9
+   },
+   "background_speech": {
+    "passed": 8,
+    "applicable": 8,
+    "recordings": 10,
+    "errors": 2,
+    "timeouts": 2
+   },
+   "talking_to_other": {
+    "passed": 9,
+    "applicable": 9,
+    "recordings": 10,
+    "errors": 0,
+    "timeouts": 0
+   },
+   "fdbench": {
+    "passed": 0,
+    "conversations": 12,
+    "errors": 0,
+    "answered": 18,
+    "turns": 55,
+    "missed": 37,
+    "premature": 0,
+    "overrun": 42
+   }
+  },
+  "clock": {
+   "ticks": 10078,
+   "generated": 2855,
+   "skipped": 7223,
+   "deadline_missed": 1598,
+   "missed_fraction": 0.56,
+   "compute_p50_ms": 580,
+   "queued_audio_p50_s": 3.22,
+   "queued_audio_max_s": 30.0,
+   "time_at_full_queue": 0.001
+  }
+ }
+}

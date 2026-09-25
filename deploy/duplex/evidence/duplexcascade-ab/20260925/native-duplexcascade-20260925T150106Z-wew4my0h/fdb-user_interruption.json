@@ -1,0 +1,341 @@
+{
+  "suite": "fdb-v1.5",
+  "cell": {
+    "name": "native-duplexcascade",
+    "levels": {
+      "F1": "cascade",
+      "F10": "slow-only",
+      "F11": "3fps",
+      "F12": "qwen3-asr",
+      "F2": "fast+slow",
+      "F3": "audio",
+      "F4": "200ms",
+      "F5": "engine",
+      "F6": "hosted-high",
+      "F7": "narration",
+      "F8": "none",
+      "F9": "local-text"
+    }
+  },
+  "provenance": {
+    "revision": "b9302dd86ab754473b268b9cdfb5286832e17a92",
+    "modified": false,
+    "executable_sha256": "a5c9514ff29716b2246b15a75dd78967c925075559e408184652d5cae4c1e9d8",
+    "machine": {
+      "cpu": "13th Gen Intel(R) Core(TM) i9-13900KS",
+      "cores": 32,
+      "gpu": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+      "os": "linux",
+      "arch": "amd64",
+      "go_version": "go1.25.14",
+      "hostname": "ubuntu"
+    },
+    "started_at": "2026-09-25T15:01:09Z",
+    "finished_at": "2026-09-25T15:17:19Z"
+  },
+  "expected_tasks": 200,
+  "tasks": [
+    {
+      "id": "user_interruption/1",
+      "completed": false,
+      "passed": false,
+      "error": "the conversation did not finish before the timeout",
+      "notes": {
+        "category": "user_interruption",
+        "context": "How can I save money more effectively?",
+        "event": "Actually, what are some financial goals I should set?"
+      }
+    },
+    {
+      "id": "user_interruption/2",
+      "completed": true,
+      "passed": false,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 840,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 360,
+        "agent_playout_after_event_ms": 825.0150000000003,
+        "agent_playout_at_event_ms": 78.98400000000038,
+        "event_audible_after_ms": 240,
+        "playout_yield_latency_no_flush_ms": 2132.4069999999992,
+        "yield_latency_from_annotation_ms": 2333.536,
+        "yield_latency_ms": 2093.536
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_interruption",
+        "context": "What are the latest trends in smartphones?",
+        "event": "Let's switch to talking about laptops."
+      }
+    },
+    {
+      "id": "user_interruption/3",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 0,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 0,
+        "agent_playout_after_event_ms": 0,
+        "agent_playout_at_event_ms": 0,
+        "event_audible_after_ms": 140
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "user_interruption",
+        "context": "What's the latest in smart home devices?",
+        "event": "Hold on, what time is the meeting scheduled today?"
+      }
+    },
+    {
+      "id": "user_interruption/4",
+      "completed": true,
+      "passed": false,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 840,
+        "agent_audio_at_event_ms": 100,
+        "agent_audio_before_event_ms": 440,
+        "agent_playout_after_event_ms": 846.1949999999997,
+        "agent_playout_at_event_ms": 76.01699999999983,
+        "event_audible_after_ms": 480,
+        "playout_yield_latency_no_flush_ms": 2348.6489999999985,
+        "yield_latency_from_annotation_ms": 2808.6499999999987,
+        "yield_latency_ms": 2328.6499999999987
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_interruption",
+        "context": "How should I take care of indoor plants?",
+        "event": "By the way, what’s the weather going to be like tomorrow?"
+      }
+    },
+    {
+      "id": "user_interruption/5",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 800,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 420,
+        "agent_playout_after_event_ms": 818.116,
+        "agent_playout_at_event_ms": 89.03999999999996,
+        "event_audible_after_ms": 720,
+        "playout_yield_latency_no_flush_ms": 919.2399999999998,
+        "yield_latency_from_annotation_ms": 1590.5190000000002,
+        "yield_latency_ms": 870.5190000000002
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_interruption",
+        "context": "What are the benefits of eating more fruits?",
+        "event": "Can we talk about something else?"
+      }
+    },
+    {
+      "id": "user_interruption/6",
+      "completed": true,
+      "passed": false,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 860,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 140,
+        "agent_playout_after_event_ms": 830.8830000000007,
+        "agent_playout_at_event_ms": 80,
+        "event_audible_after_ms": 340,
+        "playout_yield_latency_no_flush_ms": 1985.0599999999986,
+        "yield_latency_from_annotation_ms": 2292.1049999999987,
+        "yield_latency_ms": 1952.1049999999987
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_interruption",
+        "context": "Which places do you recommend visiting in Europe?",
+        "event": "Oh, before I forget, do I need a visa to travel to Europe?"
+      }
+    },
+    {
+      "id": "user_interruption/7",
+      "completed": false,
+      "passed": false,
+      "error": "the conversation did not finish before the timeout",
+      "notes": {
+        "category": "user_interruption",
+        "context": "How often should I run to stay fit?",
+        "event": "Oh, by the way, can you tell me about some good running shoes?"
+      }
+    },
+    {
+      "id": "user_interruption/8",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 520,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 0,
+        "agent_playout_after_event_ms": 503.7470000000003,
+        "agent_playout_at_event_ms": 0,
+        "event_audible_after_ms": 220
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "user_interruption",
+        "context": "What’s a good comedy to watch?",
+        "event": "Actually, what are the new movies released?"
+      }
+    },
+    {
+      "id": "user_interruption/9",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 760,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 0,
+        "agent_playout_after_event_ms": 755.8919999999998,
+        "agent_playout_at_event_ms": 0,
+        "event_audible_after_ms": 500
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "user_interruption",
+        "context": "What makes a good smartphone camera?",
+        "event": "By the way, what's the price of the latest model?"
+      }
+    },
+    {
+      "id": "user_interruption/10",
+      "completed": false,
+      "passed": false,
+      "error": "the conversation did not finish before the timeout",
+      "notes": {
+        "category": "user_interruption",
+        "context": "How can I reduce stress quickly?",
+        "event": "Can we switch to talking about sleep improvement?"
+      }
+    }
+  ],
+  "summary": {
+    "completed": 7,
+    "failed": 3,
+    "passed": 1,
+    "not_applicable": 3,
+    "pass_rate": 0.25,
+    "complete": false,
+    "incompleteness": "190 of 200 tasks were not attempted",
+    "distributions": {
+      "agent_audio_after_event_ms": {
+        "count": 7,
+        "unit": "ms",
+        "min": 0,
+        "p50": 800,
+        "p90": 848,
+        "p95": 854,
+        "p99": 858.8,
+        "max": 860,
+        "mean": 660
+      },
+      "agent_audio_at_event_ms": {
+        "count": 7,
+        "unit": "ms",
+        "min": 0,
+        "p50": 80,
+        "p90": 88,
+        "p95": 93.99999999999999,
+        "p99": 98.79999999999998,
+        "max": 100,
+        "mean": 48.57142857142857
+      },
+      "agent_audio_before_event_ms": {
+        "count": 7,
+        "unit": "ms",
+        "min": 0,
+        "p50": 140,
+        "p90": 428,
+        "p95": 433.99999999999994,
+        "p99": 438.8,
+        "max": 440,
+        "mean": 194.28571428571428
+      },
+      "agent_playout_after_event_ms": {
+        "count": 7,
+        "unit": "ms",
+        "min": 0,
+        "p50": 818.116,
+        "p90": 837.0078000000003,
+        "p95": 841.6014,
+        "p99": 845.2762799999998,
+        "max": 846.1949999999997,
+        "mean": 654.2640000000001
+      },
+      "agent_playout_at_event_ms": {
+        "count": 7,
+        "unit": "ms",
+        "min": 0,
+        "p50": 76.01699999999983,
+        "p90": 83.61599999999999,
+        "p95": 86.32799999999997,
+        "p99": 88.49759999999996,
+        "max": 89.03999999999996,
+        "mean": 46.29157142857145
+      },
+      "event_audible_after_ms": {
+        "count": 7,
+        "unit": "ms",
+        "min": 140,
+        "p50": 340,
+        "p90": 588,
+        "p95": 653.9999999999998,
+        "p99": 706.7999999999998,
+        "max": 720,
+        "mean": 377.14285714285717
+      },
+      "playout_yield_latency_no_flush_ms": {
+        "count": 4,
+        "unit": "ms",
+        "min": 919.2399999999998,
+        "p50": 2058.733499999999,
+        "p90": 2283.776399999999,
+        "p95": 2316.2126999999987,
+        "p99": 2342.161739999998,
+        "max": 2348.6489999999985,
+        "mean": 1846.338999999999
+      },
+      "yield_latency_from_annotation_ms": {
+        "count": 4,
+        "unit": "ms",
+        "min": 1590.5190000000002,
+        "p50": 2312.8204999999994,
+        "p90": 2666.115799999999,
+        "p95": 2737.382899999999,
+        "p99": 2794.3965799999987,
+        "max": 2808.6499999999987,
+        "mean": 2256.2024999999994
+      },
+      "yield_latency_ms": {
+        "count": 4,
+        "unit": "ms",
+        "min": 870.5190000000002,
+        "p50": 2022.8204999999994,
+        "p90": 2258.115799999999,
+        "p95": 2293.3828999999987,
+        "p99": 2321.5965799999985,
+        "max": 2328.6499999999987,
+        "mean": 1811.2024999999994
+      }
+    }
+  }
+}

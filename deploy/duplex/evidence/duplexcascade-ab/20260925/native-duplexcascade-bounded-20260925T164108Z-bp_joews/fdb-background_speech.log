@@ -1,0 +1,19 @@
+[1/10] background_speech/1
+[2/10] background_speech/2
+[3/10] background_speech/3
+[4/10] background_speech/4
+[5/10] background_speech/5
+[6/10] background_speech/6
+[7/10] background_speech/7
+[8/10] background_speech/8
+[9/10] background_speech/9
+[10/10] background_speech/10
+
+cell       : F1=cascade F10=slow-only F11=3fps F12=qwen3-asr F2=fast+slow F3=audio F4=200ms F5=engine F6=hosted-high F7=narration F8=none F9=local-text
+provenance : e7e659b6d6e2 on ubuntu
+tasks      : 8 completed, 2 failed, of 100 expected
+score      : 8/8 applicable, unavailable (incomplete campaign) (0 not applicable)
+  background_speech  hold  8/8 applicable  unavailable (incomplete campaign)  (0 not applicable)
+
+NOT REPORTABLE: cell "native-duplexcascade-bounded" is not reportable: 90 of 100 tasks were not attempted
+written to /home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/native-duplexcascade-bounded/runs/20260925T164108Z-bp_joews/fdb-background_speech.json

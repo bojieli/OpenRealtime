@@ -1,0 +1,344 @@
+{
+  "suite": "fdb-v1.5",
+  "cell": {
+    "name": "native-duplexcascade",
+    "levels": {
+      "F1": "cascade",
+      "F10": "slow-only",
+      "F11": "3fps",
+      "F12": "qwen3-asr",
+      "F2": "fast+slow",
+      "F3": "audio",
+      "F4": "200ms",
+      "F5": "engine",
+      "F6": "hosted-high",
+      "F7": "narration",
+      "F8": "none",
+      "F9": "local-text"
+    }
+  },
+  "provenance": {
+    "revision": "e7e659b6d6e21b494d8d7839de8fb217f7ddc89e",
+    "modified": false,
+    "executable_sha256": "a5c9514ff29716b2246b15a75dd78967c925075559e408184652d5cae4c1e9d8",
+    "machine": {
+      "cpu": "13th Gen Intel(R) Core(TM) i9-13900KS",
+      "cores": 32,
+      "gpu": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+      "os": "linux",
+      "arch": "amd64",
+      "go_version": "go1.25.14",
+      "hostname": "ubuntu"
+    },
+    "started_at": "2026-09-25T16:00:06Z",
+    "finished_at": "2026-09-25T16:08:24Z"
+  },
+  "expected_tasks": 100,
+  "tasks": [
+    {
+      "id": "talking_to_other/1",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 0,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 0,
+        "agent_playout_after_event_ms": 0,
+        "agent_playout_at_event_ms": 0,
+        "event_audible_after_ms": 220
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "talking_to_other",
+        "context": "What's the population of Toronto?",
+        "event": "Dad, microwave just quit on us."
+      }
+    },
+    {
+      "id": "talking_to_other/2",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 800,
+        "agent_audio_at_event_ms": 60,
+        "agent_audio_before_event_ms": 400,
+        "agent_audio_hold_window_ms": 800,
+        "agent_playout_after_event_ms": 782.5060000000003,
+        "agent_playout_at_event_ms": 70.05400000000009,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "talking_to_other",
+        "context": "What’s the sunrise time tomorrow?",
+        "event": "Coach Garcia, ankle's still kinda sore."
+      }
+    },
+    {
+      "id": "talking_to_other/3",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 260,
+        "agent_audio_at_event_ms": 60,
+        "agent_audio_before_event_ms": 60,
+        "agent_audio_hold_window_ms": 260,
+        "agent_playout_after_event_ms": 260.5119999999997,
+        "agent_playout_at_event_ms": 59.488000000000284,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "talking_to_other",
+        "context": "How many calories are in an avocado?",
+        "event": "Ben, don't forget Mom's birthday Sunday."
+      }
+    },
+    {
+      "id": "talking_to_other/4",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 860,
+        "agent_audio_at_event_ms": 60,
+        "agent_audio_before_event_ms": 60,
+        "agent_audio_hold_window_ms": 860,
+        "agent_playout_after_event_ms": 855.1949999999997,
+        "agent_playout_at_event_ms": 60,
+        "event_audible_after_ms": 60
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "talking_to_other",
+        "context": "Add almond milk to my grocery list.",
+        "event": "Diego, you still good for lunch Friday?"
+      }
+    },
+    {
+      "id": "talking_to_other/5",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 780,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 440,
+        "agent_audio_hold_window_ms": 780,
+        "agent_playout_after_event_ms": 778.6229999999996,
+        "agent_playout_at_event_ms": 84.36599999999999,
+        "event_audible_after_ms": 80
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "talking_to_other",
+        "context": "How far is it from Beijing to Shanghai?",
+        "event": "Derek, traffic was insanity today."
+      }
+    },
+    {
+      "id": "talking_to_other/6",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 880,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 440,
+        "agent_audio_hold_window_ms": 880,
+        "agent_playout_after_event_ms": 873.0320000000002,
+        "agent_playout_at_event_ms": 83.0029999999997,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "talking_to_other",
+        "context": "Find a vegetarian recipe with quinoa.",
+        "event": "Grandma, I'm fine, seriously, no worries."
+      }
+    },
+    {
+      "id": "talking_to_other/7",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 0,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 0,
+        "agent_playout_after_event_ms": 0,
+        "agent_playout_at_event_ms": 0,
+        "event_audible_after_ms": 60
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "talking_to_other",
+        "context": "What's the score of the Mariners game?",
+        "event": "Trainer Kim, how many reps left again?"
+      }
+    },
+    {
+      "id": "talking_to_other/8",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 880,
+        "agent_audio_at_event_ms": 100,
+        "agent_audio_before_event_ms": 300,
+        "agent_audio_hold_window_ms": 880,
+        "agent_playout_after_event_ms": 876.7169999999996,
+        "agent_playout_at_event_ms": 85.32099999999991,
+        "event_audible_after_ms": 120
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "talking_to_other",
+        "context": "Translate 'I love sushi' to Japanese.",
+        "event": "Paul, poke me if I forget to send that email."
+      }
+    },
+    {
+      "id": "talking_to_other/9",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 240,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 0,
+        "agent_playout_after_event_ms": 240,
+        "agent_playout_at_event_ms": 0,
+        "event_audible_after_ms": 80
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "talking_to_other",
+        "context": "What's the definition of 'photosynthesis'?",
+        "event": "Grandma, those cookies smell incredible."
+      }
+    },
+    {
+      "id": "talking_to_other/10",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 260,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 100,
+        "agent_audio_hold_window_ms": 260,
+        "agent_playout_after_event_ms": 254.03699999999935,
+        "agent_playout_at_event_ms": 75.24099999999999,
+        "event_audible_after_ms": 80
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "talking_to_other",
+        "context": "Mute the TV.",
+        "event": "Courtney, your phone's buzzing."
+      }
+    }
+  ],
+  "summary": {
+    "completed": 10,
+    "failed": 0,
+    "passed": 7,
+    "not_applicable": 3,
+    "pass_rate": 1,
+    "complete": false,
+    "incompleteness": "90 of 100 tasks were not attempted",
+    "distributions": {
+      "agent_audio_after_event_ms": {
+        "count": 10,
+        "unit": "ms",
+        "min": 0,
+        "p50": 520,
+        "p90": 880,
+        "p95": 880,
+        "p99": 880,
+        "max": 880,
+        "mean": 496
+      },
+      "agent_audio_at_event_ms": {
+        "count": 10,
+        "unit": "ms",
+        "min": 0,
+        "p50": 60,
+        "p90": 82,
+        "p95": 90.99999999999997,
+        "p99": 98.2,
+        "max": 100,
+        "mean": 52
+      },
+      "agent_audio_before_event_ms": {
+        "count": 10,
+        "unit": "ms",
+        "min": 0,
+        "p50": 80,
+        "p90": 440,
+        "p95": 440,
+        "p99": 440,
+        "max": 440,
+        "mean": 180
+      },
+      "agent_audio_hold_window_ms": {
+        "count": 7,
+        "unit": "ms",
+        "min": 260,
+        "p50": 800,
+        "p90": 880,
+        "p95": 880,
+        "p99": 880,
+        "max": 880,
+        "mean": 674.2857142857143
+      },
+      "agent_playout_after_event_ms": {
+        "count": 10,
+        "unit": "ms",
+        "min": 0,
+        "p50": 519.5674999999997,
+        "p90": 873.4005000000001,
+        "p95": 875.0587499999999,
+        "p99": 876.3853499999998,
+        "max": 876.7169999999996,
+        "mean": 492.06219999999985
+      },
+      "agent_playout_at_event_ms": {
+        "count": 10,
+        "unit": "ms",
+        "min": 0,
+        "p50": 65.02700000000004,
+        "p90": 84.46149999999997,
+        "p95": 84.89124999999996,
+        "p99": 85.23504999999992,
+        "max": 85.32099999999991,
+        "mean": 51.747299999999996
+      },
+      "event_audible_after_ms": {
+        "count": 10,
+        "unit": "ms",
+        "min": 40,
+        "p50": 80,
+        "p90": 129.99999999999997,
+        "p95": 174.9999999999999,
+        "p99": 211.00000000000003,
+        "max": 220,
+        "mean": 98
+      }
+    }
+  }
+}

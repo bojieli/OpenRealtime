@@ -1,0 +1,19 @@
+[1/10] talking_to_other/1
+[2/10] talking_to_other/2
+[3/10] talking_to_other/3
+[4/10] talking_to_other/4
+[5/10] talking_to_other/5
+[6/10] talking_to_other/6
+[7/10] talking_to_other/7
+[8/10] talking_to_other/8
+[9/10] talking_to_other/9
+[10/10] talking_to_other/10
+
+cell       : F1=cascade F10=slow-only F11=3fps F12=qwen3-asr F2=fast+slow F3=audio F4=200ms F5=engine F6=hosted-high F7=narration F8=none F9=local-text
+provenance : e7e659b6d6e2 on ubuntu
+tasks      : 10 completed, 0 failed, of 100 expected
+score      : 7/7 applicable, unavailable (incomplete campaign) (3 not applicable)
+  talking_to_other   hold  7/7 applicable  unavailable (incomplete campaign)  (3 not applicable)
+
+NOT REPORTABLE: cell "native-duplexcascade" is not reportable: 90 of 100 tasks were not attempted
+written to /home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/native-duplexcascade/runs/20260925T150106Z-wew4my0h/fdb-talking_to_other.json

@@ -1,0 +1,397 @@
+{
+  "suite": "fd-bench",
+  "cell": {
+    "name": "native-duplexcascade-bounded",
+    "levels": {
+      "F1": "cascade",
+      "F10": "slow-only",
+      "F11": "3fps",
+      "F12": "qwen3-asr",
+      "F2": "fast+slow",
+      "F3": "audio",
+      "F4": "200ms",
+      "F5": "engine",
+      "F6": "hosted-high",
+      "F7": "narration",
+      "F8": "none",
+      "F9": "local-text"
+    }
+  },
+  "provenance": {
+    "revision": "e7e659b6d6e21b494d8d7839de8fb217f7ddc89e",
+    "modified": false,
+    "executable_sha256": "a5c9514ff29716b2246b15a75dd78967c925075559e408184652d5cae4c1e9d8",
+    "machine": {
+      "cpu": "13th Gen Intel(R) Core(TM) i9-13900KS",
+      "cores": 32,
+      "gpu": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+      "os": "linux",
+      "arch": "amd64",
+      "go_version": "go1.25.14",
+      "hostname": "ubuntu"
+    },
+    "started_at": "2026-09-25T18:00:19Z",
+    "finished_at": "2026-09-25T18:25:16Z"
+  },
+  "expected_tasks": 293,
+  "tasks": [
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_1",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 0,
+        "missed_turns": 4,
+        "overlap_ms": 2080,
+        "overrun_turns": 2,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "turn_end_lead_ms": 1920.0208333333358,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_10",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 7700,
+        "overrun_turns": 3,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 79.97199999999975,
+        "response_latency_p95_ms": 79.97199999999975,
+        "turn_end_lead_ms": 1688.0208333333321,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_100",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 2,
+        "overlap_ms": 6040,
+        "overrun_turns": 3,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 903.2484999999997,
+        "response_latency_p95_ms": 1579.2488500000004,
+        "turn_end_lead_ms": 940,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_101",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 2,
+        "overlap_ms": 5340,
+        "overrun_turns": 3,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 904.7444999999998,
+        "response_latency_p95_ms": 1667.7024000000004,
+        "turn_end_lead_ms": 1136.041666666666,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_102",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 9040,
+        "overrun_turns": 4,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 1545.9135000000024,
+        "response_latency_p95_ms": 1545.9135000000024,
+        "turn_end_lead_ms": 1102.0416666666679,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_103",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 6760,
+        "overrun_turns": 4,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 985.3209999999981,
+        "response_latency_p95_ms": 1783.8711999999982,
+        "turn_end_lead_ms": 1198.020833333334,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_104",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 8920,
+        "overrun_turns": 4,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 92.01600000000053,
+        "response_latency_p95_ms": 141.1226999999998,
+        "turn_end_lead_ms": 1910,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_105",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 3,
+        "missed_turns": 2,
+        "overlap_ms": 13540,
+        "overrun_turns": 4,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 159.549500000001,
+        "response_latency_p95_ms": 188.58259999999936,
+        "turn_end_lead_ms": 2234.041666666668,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_106",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 12040,
+        "overrun_turns": 4,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 14.741000000001804,
+        "response_latency_p95_ms": 14.741000000001804,
+        "turn_end_lead_ms": 1138.041666666666,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_107",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 4,
+        "overlap_ms": 10660,
+        "overrun_turns": 4,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 5.309999999999491,
+        "response_latency_p95_ms": 5.309999999999491,
+        "turn_end_lead_ms": 1462.0208333333358,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_108",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 2,
+        "missed_turns": 3,
+        "overlap_ms": 10320,
+        "overrun_turns": 4,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 25.291999999998552,
+        "response_latency_p95_ms": 41.94289999999791,
+        "turn_end_lead_ms": 922.0208333333321,
+        "turns": 5
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    },
+    {
+      "id": "cosyvoice2-single-round-combine-med/conversation_109",
+      "completed": true,
+      "passed": false,
+      "metrics": {
+        "answered": 1,
+        "missed_turns": 3,
+        "overlap_ms": 6620,
+        "overrun_turns": 3,
+        "premature_turns": 0,
+        "premature_turns_after_speech_ended": 0,
+        "response_latency_ms": 5.576000000000931,
+        "response_latency_p95_ms": 5.576000000000931,
+        "turn_end_lead_ms": 736.0208333333339,
+        "turns": 4
+      },
+      "notes": {
+        "condition": "cosyvoice2-single-round-combine-med"
+      }
+    }
+  ],
+  "summary": {
+    "completed": 12,
+    "failed": 0,
+    "passed": 0,
+    "pass_rate": 0,
+    "complete": false,
+    "incompleteness": "281 of 293 tasks were not attempted",
+    "distributions": {
+      "answered": {
+        "count": 12,
+        "unit": "count",
+        "min": 0,
+        "p50": 1.5,
+        "p90": 2,
+        "p95": 2.4499999999999993,
+        "p99": 2.8900000000000006,
+        "max": 3,
+        "mean": 1.5
+      },
+      "missed_turns": {
+        "count": 12,
+        "unit": "count",
+        "min": 2,
+        "p50": 3,
+        "p90": 4,
+        "p95": 4,
+        "p99": 4,
+        "max": 4,
+        "mean": 3.0833333333333335
+      },
+      "overlap_ms": {
+        "count": 12,
+        "unit": "ms",
+        "min": 2080,
+        "p50": 8310,
+        "p90": 11902,
+        "p95": 12714.999999999998,
+        "p99": 13375,
+        "max": 13540,
+        "mean": 8255
+      },
+      "overrun_turns": {
+        "count": 12,
+        "unit": "count",
+        "min": 2,
+        "p50": 4,
+        "p90": 4,
+        "p95": 4,
+        "p99": 4,
+        "max": 4,
+        "mean": 3.5
+      },
+      "premature_turns": {
+        "count": 12,
+        "unit": "count",
+        "min": 0,
+        "p50": 0,
+        "p90": 0,
+        "p95": 0,
+        "p99": 0,
+        "max": 0,
+        "mean": 0
+      },
+      "premature_turns_after_speech_ended": {
+        "count": 12,
+        "unit": "count",
+        "min": 0,
+        "p50": 0,
+        "p90": 0,
+        "p95": 0,
+        "p99": 0,
+        "max": 0,
+        "mean": 0
+      },
+      "response_latency_ms": {
+        "count": 11,
+        "unit": "ms",
+        "min": 5.309999999999491,
+        "p50": 92.01600000000053,
+        "p90": 985.3209999999981,
+        "p95": 1265.6172500000002,
+        "p99": 1489.8542500000021,
+        "max": 1545.9135000000024,
+        "mean": 429.2440000000002
+      },
+      "response_latency_p95_ms": {
+        "count": 11,
+        "unit": "ms",
+        "min": 5.309999999999491,
+        "p50": 141.1226999999998,
+        "p90": 1667.7024000000004,
+        "p95": 1725.7867999999994,
+        "p99": 1772.2543199999984,
+        "max": 1783.8711999999982,
+        "mean": 641.2711954545455
+      },
+      "turn_end_lead_ms": {
+        "count": 12,
+        "unit": "ms",
+        "min": 736.0208333333339,
+        "p50": 1168.03125,
+        "p90": 1919.0187500000022,
+        "p95": 2061.330208333335,
+        "p99": 2199.4993750000017,
+        "max": 2234.041666666668,
+        "mean": 1365.5243055555559
+      },
+      "turns": {
+        "count": 12,
+        "unit": "count",
+        "min": 4,
+        "p50": 5,
+        "p90": 5,
+        "p95": 5,
+        "p99": 5,
+        "max": 5,
+        "mean": 4.583333333333333
+      }
+    }
+  }
+}

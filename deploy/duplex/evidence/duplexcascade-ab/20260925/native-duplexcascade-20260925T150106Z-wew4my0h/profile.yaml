@@ -1,0 +1,10 @@
+# Experimental released C1 path; requires Kyutai ASR :9112 and TTS :9125.
+# Requires the warmed native sidecar on :9147; public GPU validation pending.
+# No session instruction or background-text channel in the released protocol.
+# Delivery is paced; turn boundary uses thinking + drained buffer + 600 ms quiet.
+binding: duplex
+sidecar-address: tcp:127.0.0.1:9147
+sidecar-protocol: 1
+slow-provider: openai-compatible
+slow-url: http://127.0.0.1:9100/v1
+slow-model: qwen3-8b

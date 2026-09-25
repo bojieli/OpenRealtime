@@ -1,0 +1,127 @@
+{
+  "finished": "2026-09-25T18:25:16.731794+00:00",
+  "exit_code": 1,
+  "errors": [
+    "fdb-user_interruption.json: exit 0; 3 task errors",
+    "fdb-user_backchannel.json: exit 0; 9 task errors",
+    "fdb-background_speech.json: exit 0; 2 task errors",
+    "fdb-talking_to_other.json: exit 0; incomplete benchmark: 90 of 100 tasks were not attempted",
+    "fdbench.json: exit 0; incomplete benchmark: 281 of 293 tasks were not attempted"
+  ],
+  "commands": {
+    "fdb-user_interruption.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-b7b68848",
+        "bench",
+        "fdb",
+        "-categories",
+        "user_interruption",
+        "-limit",
+        "10",
+        "-wait-configured",
+        "-endpoint",
+        "ws://127.0.0.1:9296/v1/realtime",
+        "-cell",
+        "native-duplexcascade-bounded",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/native-duplexcascade-bounded/runs/20260925T164108Z-bp_joews/fdb-user_interruption.json"
+      ],
+      "exit_code": 0,
+      "error": "3 task errors"
+    },
+    "fdb-user_backchannel.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-b7b68848",
+        "bench",
+        "fdb",
+        "-categories",
+        "user_backchannel",
+        "-limit",
+        "10",
+        "-wait-configured",
+        "-endpoint",
+        "ws://127.0.0.1:9296/v1/realtime",
+        "-cell",
+        "native-duplexcascade-bounded",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/native-duplexcascade-bounded/runs/20260925T164108Z-bp_joews/fdb-user_backchannel.json"
+      ],
+      "exit_code": 0,
+      "error": "9 task errors"
+    },
+    "fdb-background_speech.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-b7b68848",
+        "bench",
+        "fdb",
+        "-categories",
+        "background_speech",
+        "-limit",
+        "10",
+        "-wait-configured",
+        "-endpoint",
+        "ws://127.0.0.1:9296/v1/realtime",
+        "-cell",
+        "native-duplexcascade-bounded",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/native-duplexcascade-bounded/runs/20260925T164108Z-bp_joews/fdb-background_speech.json"
+      ],
+      "exit_code": 0,
+      "error": "2 task errors"
+    },
+    "fdb-talking_to_other.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-b7b68848",
+        "bench",
+        "fdb",
+        "-categories",
+        "talking_to_other",
+        "-limit",
+        "10",
+        "-wait-configured",
+        "-endpoint",
+        "ws://127.0.0.1:9296/v1/realtime",
+        "-cell",
+        "native-duplexcascade-bounded",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/native-duplexcascade-bounded/runs/20260925T164108Z-bp_joews/fdb-talking_to_other.json"
+      ],
+      "exit_code": 0,
+      "error": "incomplete benchmark: 90 of 100 tasks were not attempted"
+    },
+    "fdbench.json": {
+      "argv": [
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/bin/openrealtime-b7b68848",
+        "bench",
+        "fdbench",
+        "-conditions",
+        "cosyvoice2-single-round-combine-med",
+        "-limit",
+        "12",
+        "-wait-configured",
+        "-endpoint",
+        "ws://127.0.0.1:9296/v1/realtime",
+        "-cell",
+        "native-duplexcascade-bounded",
+        "-out",
+        "/home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/native-duplexcascade-bounded/runs/20260925T164108Z-bp_joews/fdbench.json"
+      ],
+      "exit_code": 0,
+      "error": "incomplete benchmark: 281 of 293 tasks were not attempted"
+    }
+  },
+  "load_average_end": [
+    "398.48",
+    "409.33",
+    "431.50"
+  ],
+  "sha256": {
+    "run.json": "a7dfdd5a57efd38539b3c2e66ecb45a101c80d8662e2c844b07bca0cc48fcb2c",
+    "profile.yaml": "1013d66a2df51b5370b1c47ab69cc9ce682106cd03e19a920da0f24ae0ad4937",
+    "fdb-user_interruption.json": "0619c0ba6950130267d68af11dcb8c49bfe2b2ec2281f4996a41fb931198b001",
+    "fdb-user_backchannel.json": "6c9ad47ecb00bb7241a45333e2bc15ea590ad2421f236db5903db74cb8888bd8",
+    "fdb-background_speech.json": "ed0b5ca8f15af34ab4d7be2b4844ab894f76554b9767465cfbda7ce9cf18adbf",
+    "fdb-talking_to_other.json": "572eb5bb17779bb89502f0820d4d6f524466ee345248317aae9f5074dd44db2e",
+    "fdbench.json": "138c99c1bc125d0dea4922555fda2a7ef4692009bb472881fe5602fc8467d8ca"
+  }
+}

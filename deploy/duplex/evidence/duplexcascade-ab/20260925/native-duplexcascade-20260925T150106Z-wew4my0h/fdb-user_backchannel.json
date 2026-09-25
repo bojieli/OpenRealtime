@@ -1,0 +1,258 @@
+{
+  "suite": "fdb-v1.5",
+  "cell": {
+    "name": "native-duplexcascade",
+    "levels": {
+      "F1": "cascade",
+      "F10": "slow-only",
+      "F11": "3fps",
+      "F12": "qwen3-asr",
+      "F2": "fast+slow",
+      "F3": "audio",
+      "F4": "200ms",
+      "F5": "engine",
+      "F6": "hosted-high",
+      "F7": "narration",
+      "F8": "none",
+      "F9": "local-text"
+    }
+  },
+  "provenance": {
+    "revision": "c18cce822b76282d21e0a98ba44c2af77d6d9a97",
+    "modified": false,
+    "executable_sha256": "a5c9514ff29716b2246b15a75dd78967c925075559e408184652d5cae4c1e9d8",
+    "machine": {
+      "cpu": "13th Gen Intel(R) Core(TM) i9-13900KS",
+      "cores": 32,
+      "gpu": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+      "os": "linux",
+      "arch": "amd64",
+      "go_version": "go1.25.14",
+      "hostname": "ubuntu"
+    },
+    "started_at": "2026-09-25T15:17:22Z",
+    "finished_at": "2026-09-25T15:44:50Z"
+  },
+  "expected_tasks": 98,
+  "tasks": [
+    {
+      "id": "user_backchannel/1",
+      "completed": false,
+      "passed": false,
+      "error": "the conversation did not finish before the timeout",
+      "notes": {
+        "category": "user_backchannel",
+        "context": "Present a thorough explanation of global warming.",
+        "event": "yes yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/2",
+      "completed": false,
+      "passed": false,
+      "error": "the conversation did not finish before the timeout",
+      "notes": {
+        "category": "user_backchannel",
+        "context": "Detail photosynthesis in full.",
+        "event": "right yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/3",
+      "completed": true,
+      "passed": true,
+      "applicability": "applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 900,
+        "agent_audio_at_event_ms": 80,
+        "agent_audio_before_event_ms": 440,
+        "agent_audio_hold_window_ms": 900,
+        "agent_playout_after_event_ms": 887.0949999999993,
+        "agent_playout_at_event_ms": 92.96700000000055,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "true",
+        "applicable": "true",
+        "category": "user_backchannel",
+        "context": "Describe quantum computing comprehensively.",
+        "event": "yup"
+      }
+    },
+    {
+      "id": "user_backchannel/4",
+      "completed": false,
+      "passed": false,
+      "error": "the conversation did not finish before the timeout",
+      "notes": {
+        "category": "user_backchannel",
+        "context": "Offer a complete breakdown of machine learning.",
+        "event": "uh-huh"
+      }
+    },
+    {
+      "id": "user_backchannel/5",
+      "completed": false,
+      "passed": false,
+      "error": "the conversation did not finish before the timeout",
+      "notes": {
+        "category": "user_backchannel",
+        "context": "Provide an in-depth overview of blockchain technology.",
+        "event": "mm-hmm yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/6",
+      "completed": false,
+      "passed": false,
+      "error": "the conversation did not finish before the timeout",
+      "notes": {
+        "category": "user_backchannel",
+        "context": "Discuss climate change exhaustively.",
+        "event": "yeah right"
+      }
+    },
+    {
+      "id": "user_backchannel/7",
+      "completed": false,
+      "passed": false,
+      "error": "the conversation did not finish before the timeout",
+      "notes": {
+        "category": "user_backchannel",
+        "context": "Give a detailed introduction to the stock market.",
+        "event": "right yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/8",
+      "completed": false,
+      "passed": false,
+      "error": "the conversation did not finish before the timeout",
+      "notes": {
+        "category": "user_backchannel",
+        "context": "Illuminate mental health holistically.",
+        "event": "uh-huh yeah"
+      }
+    },
+    {
+      "id": "user_backchannel/9",
+      "completed": false,
+      "passed": false,
+      "error": "the conversation did not finish before the timeout",
+      "notes": {
+        "category": "user_backchannel",
+        "context": "Deliver a full exploration of the human brain.",
+        "event": "yeah okay"
+      }
+    },
+    {
+      "id": "user_backchannel/10",
+      "completed": true,
+      "passed": false,
+      "applicability": "not_applicable",
+      "metrics": {
+        "agent_audio_after_event_ms": 0,
+        "agent_audio_at_event_ms": 0,
+        "agent_audio_before_event_ms": 0,
+        "agent_playout_after_event_ms": 0,
+        "agent_playout_at_event_ms": 0,
+        "event_audible_after_ms": 40
+      },
+      "notes": {
+        "agent_was_speaking": "false",
+        "applicable": "false",
+        "category": "user_backchannel",
+        "context": "Outline ancient Egypt clearly.",
+        "event": "alright"
+      }
+    }
+  ],
+  "summary": {
+    "completed": 2,
+    "failed": 8,
+    "passed": 1,
+    "not_applicable": 1,
+    "pass_rate": 1,
+    "complete": false,
+    "incompleteness": "88 of 98 tasks were not attempted",
+    "distributions": {
+      "agent_audio_after_event_ms": {
+        "count": 2,
+        "unit": "ms",
+        "min": 0,
+        "p50": 450,
+        "p90": 810,
+        "p95": 855,
+        "p99": 891,
+        "max": 900,
+        "mean": 450
+      },
+      "agent_audio_at_event_ms": {
+        "count": 2,
+        "unit": "ms",
+        "min": 0,
+        "p50": 40,
+        "p90": 72,
+        "p95": 76,
+        "p99": 79.2,
+        "max": 80,
+        "mean": 40
+      },
+      "agent_audio_before_event_ms": {
+        "count": 2,
+        "unit": "ms",
+        "min": 0,
+        "p50": 220,
+        "p90": 396,
+        "p95": 418,
+        "p99": 435.6,
+        "max": 440,
+        "mean": 220
+      },
+      "agent_audio_hold_window_ms": {
+        "count": 1,
+        "unit": "ms",
+        "min": 900,
+        "p50": 900,
+        "p90": 900,
+        "p95": 900,
+        "p99": 900,
+        "max": 900,
+        "mean": 900
+      },
+      "agent_playout_after_event_ms": {
+        "count": 2,
+        "unit": "ms",
+        "min": 0,
+        "p50": 443.5474999999997,
+        "p90": 798.3854999999994,
+        "p95": 842.7402499999994,
+        "p99": 878.2240499999994,
+        "max": 887.0949999999993,
+        "mean": 443.5474999999997
+      },
+      "agent_playout_at_event_ms": {
+        "count": 2,
+        "unit": "ms",
+        "min": 0,
+        "p50": 46.48350000000028,
+        "p90": 83.6703000000005,
+        "p95": 88.31865000000052,
+        "p99": 92.03733000000055,
+        "max": 92.96700000000055,
+        "mean": 46.48350000000028
+      },
+      "event_audible_after_ms": {
+        "count": 2,
+        "unit": "ms",
+        "min": 40,
+        "p50": 40,
+        "p90": 40,
+        "p95": 40,
+        "p99": 40,
+        "max": 40,
+        "mean": 40
+      }
+    }
+  }
+}

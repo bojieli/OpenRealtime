@@ -1,0 +1,19 @@
+[1/10] user_interruption/1
+[2/10] user_interruption/2
+[3/10] user_interruption/3
+[4/10] user_interruption/4
+[5/10] user_interruption/5
+[6/10] user_interruption/6
+[7/10] user_interruption/7
+[8/10] user_interruption/8
+[9/10] user_interruption/9
+[10/10] user_interruption/10
+
+cell       : F1=cascade F10=slow-only F11=3fps F12=qwen3-asr F2=fast+slow F3=audio F4=200ms F5=engine F6=hosted-high F7=narration F8=none F9=local-text
+provenance : e7e659b6d6e2 on ubuntu
+tasks      : 7 completed, 3 failed, of 200 expected
+score      : 1/5 applicable, unavailable (incomplete campaign) (2 not applicable)
+  user_interruption  yield  1/5 applicable  unavailable (incomplete campaign)  (2 not applicable)
+
+NOT REPORTABLE: cell "native-duplexcascade-bounded" is not reportable: 190 of 200 tasks were not attempted
+written to /home/ubuntu/OpenRealtime/.runtime/duplex-plan/results/e2e/native-duplexcascade-bounded/runs/20260925T164108Z-bp_joews/fdb-user_interruption.json
