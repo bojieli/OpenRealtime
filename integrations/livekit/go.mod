@@ -87,3 +87,9 @@ require (
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+// LiveKit SDK v2.20.0 uses these forks together for its transport. Go
+// applies replace directives only from the main module, so mirror both here.
+replace github.com/pion/webrtc/v4 => github.com/livekit/webrtc-pion/v4 v4.2.25-warp.3
+
+replace github.com/pion/ice/v4 => github.com/livekit/ice/v4 v4.4.8-warp.4
