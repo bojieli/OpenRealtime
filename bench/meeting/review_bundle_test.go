@@ -2757,10 +2757,11 @@ func TestMeetingReviewBundleFourCaseAllocationThreshold(t *testing.T) {
 	// receipt publication/reopen before atomic promotion, retention of every
 	// provider exchange artifact, media reverification, and exact-tree sealing.
 	// The crash-recoverable receipt-before-visibility contract has a stable
-	// 172,567..172,569 allocation baseline on the reference toolchain. Preserve
-	// about seven percent headroom while still catching a material regression in
-	// this expanded security boundary.
-	const maximumAllocations = 185_000
+	// 172,567..172,569 allocation baseline on the former Go toolchain. On
+	// Go 1.26.11 linux/arm64, main and the updated dependencies both use
+	// 185,559. The darwin/arm64 run uses 187,119. Retain a small margin
+	// above both measurements while catching further regressions.
+	const maximumAllocations = 190_000
 	if allocations > maximumAllocations {
 		t.Fatalf("four-case review bundle allocations = %.0f, threshold %d", allocations, maximumAllocations)
 	}
