@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.2.0 — 2026-11-22
 
 - Building the root module now requires Go 1.26 or newer. Release builds use
   Go 1.26.11. The module updates `golang.org/x/sys` to v0.48.0,
