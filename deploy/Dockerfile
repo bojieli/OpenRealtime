@@ -16,7 +16,7 @@
 # from the target platform to be produced, and emulating a compiler to prove
 # otherwise costs about an order of magnitude in build time.
 
-FROM --platform=$BUILDPLATFORM golang:1.25 AS build
+FROM --platform=$BUILDPLATFORM golang:1.26.11 AS build
 
 WORKDIR /src
 

@@ -296,7 +296,7 @@ func environmentMap(environment []string) map[string]string {
 
 func resolveGoBinary(requested, root string, env map[string]string) (string, error) {
 	candidates := []string{requested, env["OPENREALTIME_GO_BIN"],
-		filepath.Join(root, ".runtime", "toolchains", "go1.25.0", "bin", "go"),
+		filepath.Join(root, ".runtime", "toolchains", "go1.26.11", "bin", "go"),
 		"/usr/local/go/bin/go", "go"}
 	seen := make(map[string]struct{})
 	for _, candidate := range candidates {
@@ -321,12 +321,12 @@ func resolveGoBinary(requested, root string, env map[string]string) (string, err
 			continue
 		}
 		output, err := exec.Command(resolved, "env", "GOVERSION").Output()
-		if err != nil || !minimumGoVersion(strings.TrimSpace(string(output)), 1, 25) {
+		if err != nil || !minimumGoVersion(strings.TrimSpace(string(output)), 1, 26) {
 			continue
 		}
 		return resolved, nil
 	}
-	return "", errors.New("OpenRealtime release validation requires Go 1.25 or newer; set OPENREALTIME_GO_BIN")
+	return "", errors.New("OpenRealtime release validation requires Go 1.26 or newer; set OPENREALTIME_GO_BIN")
 }
 
 func minimumGoVersion(version string, wantMajor, wantMinor int) bool {

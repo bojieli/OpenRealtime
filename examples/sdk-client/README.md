@@ -10,7 +10,7 @@ For a microphone conversation, start with the [browser quickstart](../../docs/qu
 
 ## Prerequisites
 
-- Go 1.25+ and the cloned repository.
+- Go 1.26+ and the cloned repository.
 - Node.js 22+ and npm.
 - Chromium for the WebRTC check; WebSocket does not need a browser.
 

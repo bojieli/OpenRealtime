@@ -34,7 +34,7 @@ can provide. For an integration, state which provider and transport you used.
 
 ## Development setup
 
-Install Go 1.25 or newer, clone the repository, and run the same gate used by
+Install Go 1.26 or newer, clone the repository, and run the same gate used by
 CI:
 
 ```bash

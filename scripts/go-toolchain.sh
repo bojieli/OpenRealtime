@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Sourced by the deterministic reproduction gates. The project requires Go
-# 1.25+, but some hosts retain an older `/usr/bin/go` ahead of the installed
+# 1.26+, but some hosts retain an older `/usr/bin/go` ahead of the installed
 # toolchain on PATH. Prefer an explicit override, then the repository's
 # documented installation path, and finally the ambient command.
 
@@ -28,11 +28,11 @@ openrealtime_go_bin() {
     minor="${version#*.}"
     minor="${minor%%.*}"
     if [[ "${major}" =~ ^[0-9]+$ && "${minor}" =~ ^[0-9]+$ ]] &&
-      ((major > 1 || (major == 1 && minor >= 25))); then
+      ((major > 1 || (major == 1 && minor >= 26))); then
       printf '%s\n' "${candidate}"
       return 0
     fi
   done
-  echo "OpenRealtime requires Go 1.25 or newer; set OPENREALTIME_GO_BIN" >&2
+  echo "OpenRealtime requires Go 1.26 or newer; set OPENREALTIME_GO_BIN" >&2
   return 1
 }

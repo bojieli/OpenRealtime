@@ -28,7 +28,7 @@
 <p align="center">
   <a href="https://github.com/bojieli/OpenRealtime/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/bojieli/OpenRealtime/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
-  <a href="go.mod"><img alt="Go 1.25 or newer" src="https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go&logoColor=white"></a>
+  <a href="go.mod"><img alt="Go 1.26 or newer" src="https://img.shields.io/badge/Go-1.26%2B-00ADD8?logo=go&logoColor=white"></a>
   <a href="docs/protocol/openrealtime-1.md"><img alt="OpenRealtime Protocol v1" src="https://img.shields.io/badge/protocol-v1-7C3AED"></a>
 </p>
 
@@ -59,7 +59,7 @@ copilots, or agents that respond to changing screens.
 ## Run your first conversation
 
 The conference room uses the project’s twelve-scenario pipeline. It needs
-**Linux, Go 1.25+, Git, a Chromium-based browser, Deepgram and Gemini
+**Linux, Go 1.26+, Git, a Chromium-based browser, Deepgram and Gemini
 credentials**, and the local services listed in
 [Conversation room](docs/room.md). The Linux bound is the room's, not the
 project's: the room freezes a launch profile and reads it back through a
