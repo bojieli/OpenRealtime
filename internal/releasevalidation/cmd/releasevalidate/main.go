@@ -44,7 +44,7 @@ func run(arguments []string, stdout, stderr io.Writer) int {
 	artifacts := flags.String("artifacts", "", "new directory for command logs and artifacts")
 	reportPath := flags.String("report", "-", "create-only JSON report path, or - for stdout")
 	root := flags.String("root", ".", "repository root")
-	goBinary := flags.String("go", "", "Go 1.25+ binary; empty uses repository resolution")
+	goBinary := flags.String("go", "", "Go 1.26+ binary; empty uses repository resolution")
 	if err := flags.Parse(arguments); err != nil {
 		return 2
 	}

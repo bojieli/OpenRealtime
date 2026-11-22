@@ -1,6 +1,6 @@
 # Conversation room
 
-Build with Go 1.25 or later, then start the shared browser/macOS room:
+Build with Go 1.26 or later, then start the shared browser/macOS room:
 
 ```sh
 go build -o openrealtime ./cmd/openrealtime

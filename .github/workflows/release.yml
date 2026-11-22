@@ -46,8 +46,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.25'
-          check-latest: true
+          go-version-file: go.mod
 
       - id: resolve
         name: The tag, VERSION, and the binary must name one release
@@ -81,8 +80,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.25'
-          check-latest: true
+          go-version-file: go.mod
 
       - name: Cross-platform release build
         env:

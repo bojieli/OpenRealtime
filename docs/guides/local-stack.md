@@ -12,7 +12,7 @@ reflex.
 
 ## Before you start
 
-You need Go 1.25+, a browser for the companion, and independently running model
+You need Go 1.26+, a browser for the companion, and independently running model
 services. Hardware and GPU memory depend on the chosen models; the runtime
 itself connects to their endpoints and does not require a GPU.
 

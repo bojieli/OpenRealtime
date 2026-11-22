@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Building the root module now requires Go 1.26 or newer. Release builds use
+  Go 1.26.11. The module updates `golang.org/x/sys` to v0.48.0,
+  `golang.org/x/text` to v0.42.0, and `golang.org/x/image` to v0.46.0.
+
 - The streaming and full-duplex plan was executed on the RTX Pro: eleven open
   models are integrated behind three contracts, and what each one does is
   measured rather than declared. Recognisers speak a start/chunk/finish dialect

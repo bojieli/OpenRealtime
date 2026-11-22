@@ -2,6 +2,9 @@ module github.com/bojieli/OpenRealtime
 
 go 1.26.0
 
+// Use a patched compiler for development and release builds.
+toolchain go1.26.11
+
 require (
 	github.com/coder/websocket v1.8.15
 	github.com/pion/interceptor v0.1.51

@@ -9,7 +9,7 @@ Want every model on your own machine? Build the binary here, then switch to the
 
 ## What you need
 
-- Go 1.25 or newer
+- Go 1.26 or newer
 - Git
 - A Chromium-based browser; this is the release-gated browser path
 - For the shortest verified path, a Gemini API key
@@ -221,7 +221,7 @@ See the [macOS app guide](../macos/README.md) for setup and permissions.
 
 | Symptom | Check |
 | --- | --- |
-| `go` rejects the module version | Put Go 1.25+ first on `PATH` or invoke it by absolute path. Project scripts also honor `OPENREALTIME_GO_BIN`. |
+| `go` rejects the module version | Put Go 1.26+ first on `PATH` or invoke it by absolute path. Project scripts also honor `OPENREALTIME_GO_BIN`. |
 | The server starts but a turn fails | Run `./openrealtime providers`; verify the selected credential and model endpoint. |
 | A local cascade produces no speech | Confirm ASR, fast-model, and TTS services are listening on the configured URLs. |
 | The browser cannot use the microphone | Open the loopback URL directly and allow site microphone access. |

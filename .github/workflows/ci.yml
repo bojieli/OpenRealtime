@@ -33,8 +33,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.25'
-          check-latest: true
+          go-version-file: go.mod
 
       - uses: actions/setup-node@v7
         with:
@@ -72,8 +71,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.25'
-          check-latest: true
+          go-version-file: go.mod
 
       # Release binaries are built on every change, not only on a tag: a build
       # that is only exercised at release time is a build that breaks at
@@ -129,17 +127,14 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.25'
-          check-latest: true
+          go-version-file: go.mod
 
       - uses: actions/setup-node@v7
         with:
           node-version: '22'
 
-      # setup-go pins GOTOOLCHAIN=local, but each module pins its own exact
-      # toolchain (the root go1.25.x, integrations/livekit go1.26.x), and under
-      # GOTOOLCHAIN=local the LiveKit module cannot load at all. `auto` hands each
-      # module the toolchain its go.mod names.
+      # The root and LiveKit modules declare their toolchain requirements
+      # independently. Let Go honor both when the gate enters each module.
       - name: Let each module use the toolchain its go.mod pins
         run: echo 'GOTOOLCHAIN=auto' >> "$GITHUB_ENV"
 
@@ -212,8 +207,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.25'
-          check-latest: true
+          go-version-file: go.mod
 
       - uses: actions/setup-node@v7
         with:
@@ -223,10 +217,8 @@ jobs:
         with:
           python-version: '3.11'
 
-      # setup-go pins GOTOOLCHAIN=local, but each module pins its own exact
-      # toolchain (the root go1.25.x, integrations/livekit go1.26.x), and under
-      # GOTOOLCHAIN=local the LiveKit module cannot load at all. `auto` hands each
-      # module the toolchain its go.mod names.
+      # The root and LiveKit modules declare their toolchain requirements
+      # independently. Let Go honor both when the gate enters each module.
       - name: Let each module use the toolchain its go.mod pins
         run: echo 'GOTOOLCHAIN=auto' >> "$GITHUB_ENV"
 
@@ -323,72 +315,22 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Two modules, two language versions. The root module pins the 1.25
-      # toolchain it is released with; integrations/livekit declares go 1.26
-      # because its LiveKit dependencies now require it. govulncheck can only
-      # load packages up to the language version of the Go it was itself built
-      # with, so one binary cannot scan both: a govulncheck built with 1.25
-      # fails to load livekit/protocol with "package requires newer Go version
-      # go1.26", which is a loader error and not a clean report.
-      #
-      # That is how this job spent days red while saying nothing about
-      # advisories - the root-module scan passed, the second one could not run,
-      # and the difference between "no vulnerabilities" and "could not look" is
-      # the whole value of the job. Each module is now scanned by a govulncheck
-      # built with that module's own Go.
-      #
-      # The standard library govulncheck reports is the one the build used, so
-      # the toolchain each scan resolves is part of its claim rather than
-      # incidental to it: the root module's advisories are the ones the
-      # released binaries actually reach.
-      # The scanner is built once, with the newer of the two toolchains, and
-      # then used for both scans.
-      #
-      # Installing it inside the 1.25 half is what made this job red without it
-      # reporting on a single advisory: govulncheck now requires Go 1.26 to
-      # build, so the install failed before any package was loaded -
-      #
-      #   golang.org/x/vuln@v1.8.0 requires go >= 1.26.0 (running go 1.25.14; GOTOOLCHAIN=local)
-      #
-      # - and "could not look" was being reported in the same red as "found
-      # advisories", which is the exact confusion this job exists to prevent.
-      #
-      # Building the scanner with 1.26 changes neither scan's claim. The
-      # standard library govulncheck reports is the one the scanned build uses,
-      # and that is fixed by each module's own pinned toolchain and by the
-      # setup-go step standing in front of that scan - not by whatever compiled
-      # the scanner. The direction that does matter is the one the two-scan
-      # split already documents: a scanner built with the newer language version
-      # can load both modules, and one built with the older version can load
-      # neither.
+      # Build and run govulncheck with the release compiler, then scan each
+      # module separately so that each module's dependency graph is checked.
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.26'
-          check-latest: true
+          go-version-file: go.mod
 
       - name: Build the scanner
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           echo "GOVULNCHECK=$(go env GOPATH)/bin/govulncheck" >> "$GITHUB_ENV"
 
-      - uses: actions/setup-go@v7
-        with:
-          go-version: '1.25'
-          check-latest: true
-
       - name: Report the toolchain the released binaries use
         run: go version
 
       - name: Known advisories reachable from this code
         run: '"$GOVULNCHECK" ./...'
-
-      - uses: actions/setup-go@v7
-        with:
-          go-version: '1.26'
-          check-latest: true
-
-      - name: Report the toolchain the LiveKit integration uses
-        run: go version
 
       - name: Known advisories in the LiveKit integration
         working-directory: integrations/livekit

@@ -178,7 +178,7 @@ func TestPlanReportsBlockedRatherThanPass(t *testing.T) {
 
 func TestURLPrerequisiteRejectsCredentialsQueriesAndNonNetworkSchemes(t *testing.T) {
 	root := repositoryRoot(t)
-	goBinary := filepath.Join(root, ".runtime", "toolchains", "go1.25.0", "bin", "go")
+	goBinary := filepath.Join(root, ".runtime", "toolchains", "go1.26.11", "bin", "go")
 	for name, value := range map[string]string{
 		"userinfo": "wss://token@example.test/v1/realtime",
 		"query":    "wss://example.test/v1/realtime?token=secret",
@@ -205,7 +205,7 @@ func TestAnyEnvironmentPrerequisiteRequiresOneDeclaredAlternative(t *testing.T) 
 	root := repositoryRoot(t)
 	resolver, err := newResolver(
 		root,
-		filepath.Join(root, ".runtime", "toolchains", "go1.25.0", "bin", "go"),
+		filepath.Join(root, ".runtime", "toolchains", "go1.26.11", "bin", "go"),
 		[]string{"SECOND_PROVIDER_KEY=available"},
 		filepath.Join(t.TempDir(), "artifacts"),
 	)
@@ -786,7 +786,7 @@ func executeTestMatrix(t *testing.T, matrix Matrix, options Options) Report {
 	t.Helper()
 	root := repositoryRoot(t)
 	options.Root = root
-	options.GoBinary = filepath.Join(root, ".runtime", "toolchains", "go1.25.0", "bin", "go")
+	options.GoBinary = filepath.Join(root, ".runtime", "toolchains", "go1.26.11", "bin", "go")
 	options.ArtifactsDir = filepath.Join(t.TempDir(), "artifacts")
 	options.Environment = []string{"PATH=" + os.Getenv("PATH")}
 	report, err := Execute(context.Background(), matrix, options)
@@ -912,7 +912,7 @@ func TestPkgConfigPrerequisiteAsksPkgConfig(t *testing.T) {
 	root := repositoryRoot(t)
 	resolver, err := newResolver(
 		root,
-		filepath.Join(root, ".runtime", "toolchains", "go1.25.0", "bin", "go"),
+		filepath.Join(root, ".runtime", "toolchains", "go1.26.11", "bin", "go"),
 		nil,
 		filepath.Join(t.TempDir(), "artifacts"),
 	)
