@@ -10,12 +10,12 @@ require (
 	github.com/pion/interceptor v0.1.51
 	github.com/pion/webrtc/v4 v4.2.27
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
-	golang.org/x/sys v0.48.0
-	golang.org/x/text v0.42.0
+	golang.org/x/sys v0.50.0
+	golang.org/x/text v0.44.0
 	gopkg.in/hraban/opus.v2 v2.0.0-20230925203106-0188a62cb302
 )
 
-require golang.org/x/image v0.46.0
+require golang.org/x/image v0.48.0
 
 require (
 	github.com/pion/stun/v4 v4.0.1 // indirect
